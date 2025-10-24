@@ -1,8 +1,11 @@
-# ESP32-OBD2-Gauge
+# ESP32-Bluetooth-OBD2-Gauge
+
+## This repository has been archived and is no longer maintained. (October 24th, 2025)
+
 A fully functional code-updated
 Last Update: September 27th, 2024
 
-This is an ESP32 OBD2 Gauge for vehicles that are compatible with obd2
+This is an ESP32 OBD2 Gauge for vehicles that are compatible with OBD2
 (Special made for FORD vehicle)
  - Prototype https://youtu.be/PkQaUJbzTNM
  - Current Model Short Demo https://youtu.be/vvBIeim7XTE
@@ -53,4 +56,5 @@ buy here  https://s.click.aliexpress.com/e/_Ew95gMl
 
 -------------------------------------------------------
 [![Buy Me a Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=☕&slug=vaandcob&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff)](https://www.buymeacoffee.com/vaandcob)
+
 
