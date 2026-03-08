@@ -19,7 +19,7 @@ About opening logo image and goodbye image.
 
 //--- FLAG SETTING ----- for debugging
 //#define TERMINAL //temrinal mode (no gauge)
-//#define SERIAL_DEBUG //to show data in serial port
+#define SERIAL_DEBUG //to show data in serial port
 //#define SKIP_CONNECTION //skip elm327 BT connection to view meter
 //#define TEST_DTC //test DTC
 
@@ -54,7 +54,7 @@ Preferences pref;         //create preference
 #define LED_BLUE_PIN 17
 #define LDR_PIN 34       //LDR sensor
 #define BUZZER_PIN 26    //speaker
-#define SELECTOR_PIN 27  //push button
+#define SELECTOR_PIN 0  //push button
 // setting PWM properties
 #define backlightChannel 0
 #define buzzerChannel 2
@@ -63,6 +63,9 @@ Preferences pref;         //create preference
 TFT_eSPI tft = TFT_eSPI();
 #define TFT_GREY 0x5AEB
 
+// WATCHDOG
+unsigned long lastResponseTime = 0;
+const unsigned long BT_TIMEOUT = 5000;  // 5 seconds
 
 //ELM327 init https://www.elmelectronics.com/wp-content/uploads/2016/07/ELM327DS.pdf
 const uint8_t elm327InitCount = 8;
@@ -70,7 +73,7 @@ const String elm327Init[elm327InitCount] = { "ATZ", "ATBRD23", "ATSP0", "ATAT2",
 //const String elm327Init[elm327InitCount] = {"ATZ","ATPP0CSV35","ATPP0CON","ATSP0","ATAT2","ATL0","ATH0","ATE0","0100"};//agressive wait response time from ECU
 
 /*------ PIDS total 7 now -------------------
-Array data -> { Label , unit, pid, fomula, min, max, ,skip, digit, warn }
+Array data -> { ( [1]Label , [2]unit, [3]pid, [4]fomula, [5]min, [6]max, [7]skip, [8]digit, [9]warn }
 label = Pid label show on meter
 unit = unit for pid
 pid = string pid 0104
@@ -82,29 +85,16 @@ digit = want to show digit or not
 warn = default warning value
 */
 const String pidConfig[7][9] = {
-  //[pid][data]
-  { "ENG Load", "%", "0104", "2", "0", "100", "0", "0", "80" },      //0 = 0104
-  { "ECT", "`C", "0105", "1", "0", "120", "3", "0", "99" },          //1 = 0105
-  { "MAP", "psi", "010B", "0", "0", "40", "0", "1", "35" },          //2 = 010B
-  { "ENG SPD", "rpm", "010C", "3", "0", "5000", "0", "0", "4000" },  //3 = 010C
-  { "PCM Volt", "volt", "0142", "4", "0", "16", "1", "1", "15" },    //4 = 0142
-#ifdef FORD_T5
-  { "IAT", "`C", "010F", "1", "0", "120", "3", "0", "99" },  //5 = 015C
-#else
-  { "Oil Temp", "`C", "015C", "1", "0", "120", "3", "0", "99" },     //5 = 015C
-#endif
-#ifdef FORD_T5
-  { "TFT", "`C", "221674", "6", "0", "120", "3", "0", "99" }  //6 = 221674 for FORD T5
-#else
-  { "Trans Temp", "`C", "221E1C", "5", "0", "120", "3", "1", "99" }  //6 = 221E1C for FORD T6+
-#endif
-
+  { "ENG Load",  "%",    "0104", "2", "0",   "100",  "0", "0", "80"  },
+  { "Coolant",   "`F",   "0105", "1", "40",  "240",  "3", "0", "210" },  // formula 1 = F
+  { "MAP",       "psi",  "010B", "0", "0",   "40",   "0", "1", "35"  },
+  { "ENG SPD",   "rpm",  "010C", "3", "0",   "5500", "0", "0", "4500"},
+  { "PCM Volt",  "volt", "0142", "4", "0",   "16",   "1", "1", "15"  },
+  { "Intake Tmp",       "`F",   "010F", "1", "0",   "150",  "3", "0", "120" },  // formula 1 = F
+  { "Trans Tmp", "`F",   "0105", "1", "40",  "240",  "3", "0", "200" },  // placeholder
 };
 
-//barometric pressure "0133"  turbo boost = map - bp;
-//hold warning value
-String warningValue[7] = { "80", "99", "35", "4000", "15", "99", "99" };
-
+String warningValue[7] = { "80", "210", "35", "4500", "15", "120", "200" };
 /*  User configuration here to change display 
       layout 0      layout 1       layout 2     layout 3      layout 4     layout 5
     █ 1 █ █ 7 █   █ 1 █  █  █    █  █ 4 █  █   █  █  █ 7 █   █  █  █  █   █  █  █  █
@@ -120,20 +110,22 @@ set up meter here which pid to use on each cell
 5 - oil Temp
 6 - trans Temp
 */
-const uint8_t pidInCell[8][7] = {
-  //[layout][cellNo]
-  //the last cell must be 3 (engine speed) to check engine off
-  { 0, 2, 3, 1, 5, 6, 4 },  //layout 0 -> 6 cell {load,map,engspd,coolant,oil,tft,pcmvolt
-  { 0, 2, 3, 1, 5, 6, 4 },  //layout 1 -> 6 cell {load,map,engspd,coolant,oil,tft,pcmvolt
-  { 0, 2, 3, 1, 5, 6, 4 },  //layout 2 -> 6 cell {load,map,engspd,coolant,oil,tft,pcmvolt
-  { 1, 5, 6, 3, 2, 4, 4 },  //layout 3 -> 5 cell {cooland,oil,tft,map,pcmvolt,pcmvolt}
-  { 2, 1, 5, 6, 4, 0, 4 },  //layout 4 -> 5 cell {MAP,coolant,oiltemp,tft,pcmvolt,load,pcmvolt}
-  { 2, 0, 1, 5, 6, 4, 4 },  //layout 5 -> 5 cell {MAP,engload,coolant,oiltemp,tft,engload,rpm}
-  { 1, 5, 6, 4, 0, 3, 4 },  //layout 6 -> 4 cell {coolant,oiltemp,tft,pcmvolt,map,endspd,pcmvolt}
-  { 3, 2, 0, 4, 1, 5, 4 },  //layout 7 -> 4 cell {engspd,map,engload,pcmvolt,coolant,oil,pcmvolt}
+const uint8_t pidInCell[14][7] = {
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 0  - arc left, numeric right
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 1  - all arc
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 2  - all numeric
+  { 1, 5, 6, 3, 2, 4, 4 },  // layout 3  - numeric + vbar
+  { 2, 1, 5, 6, 4, 0, 4 },  // layout 4  - vbar outer, numeric inner
+  { 2, 0, 1, 5, 6, 4, 4 },  // layout 5  - vbar left, numeric right
+  { 1, 5, 6, 4, 0, 3, 4 },  // layout 6  - all vbar
+  { 3, 2, 0, 4, 1, 5, 4 },  // layout 7  - all vbar alt
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 8  - needle left, numeric right
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 9  - all 7seg
+  { 1, 5, 6, 3, 2, 4, 4 },  // layout 10 - all segbar
+  { 1, 5, 6, 3, 2, 4, 4 },  // layout 11 - C4 red LED (4 bars: coolant/iat/trans/map)
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 12 - DeLorean VFD (6 cells)
+  { 0, 2, 3, 1, 5, 6, 4 },  // layout 13 - Amber dot matrix (6 cells)
 };
-// User configuration here to change display  >
-
 /*---------------------------*/
 //if NO DATA value will set to 0 to skip reading
 uint8_t layout = 0;                                   //pidInCelltype 0-4 EEPROM 0x00
@@ -159,7 +151,7 @@ uint8_t pidRead = 0;                                                   //counter
 String serial_no = "";                                                 //keep serial no.
 
 //CPU Temp
-const uint8_t tempOverheat = 60;       //max operating cpu temp 60c
+const uint8_t tempOverheat = 140;      // 140°F 
 const int8_t factoryTempOffset = -50;  //default offset adjustment temp up to each tested esp32 max at -50
 float tempRead = 0.0;                  //current reading cpu temp
 int8_t tempOffset = 0;                 //offset adjustment temp up to each tested esp32
@@ -193,7 +185,7 @@ void checkCPUTemp() {  //temperature can read only when BT or Wifi Connected
   if ((temp_read_delay >= 50) && (foundOBD2)) {  //delay loop 50 then read temp, avoid error eading
     temp_read_delay = 0;
     uint8_t temperature = temprature_sens_read();      //read internal temp sensor
-    tempRead = (temperature - 32) / 1.8 + tempOffset;  //change unit F to C
+    tempRead = temperature + tempOffset;
 #ifdef SERIAL_DEBUG
     Serial.print(tempRead, 1);  //print Celsius temperature and tab
     Serial.println("°c");
@@ -202,7 +194,7 @@ void checkCPUTemp() {  //temperature can read only when BT or Wifi Connected
     if (tempRead >= tempOverheat) temp_overheat_count++;  //count overheat time
     else temp_overheat_count = 0;                         //reset
     if (temp_overheat_count > 10) {                       //overheat read more than 10 times.
-      Serial.printf("CPU Overheat Shutdown at %d°C\n", tempOverheat);
+      Serial.printf("CPU Overheat Shutdown at %d°F\n", tempOverheat);
       tft.fillRectVGradient(0, 0, 320, 240, TFT_RED, TFT_BLACK);
       tft.pushImage(127, 5, 64, 64, overheat, TFT_RED);  //show sdcard icon
       tft.setTextColor(TFT_WHITE);
@@ -225,6 +217,10 @@ void checkCPUTemp() {  //temperature can read only when BT or Wifi Connected
   }                                                    //if temp_read_delay
 }  //check CPU Temp
 /*------------------*/
+
+
+
+
 //TERMINAL terminal for debugging display text
 void Terminal(String texts, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   uint8_t max_line = round((h - y) / 16.0);
@@ -300,14 +296,14 @@ void setup() {
   Serial.printf("ChipRevision %d, Cpu Freq %d, SDK Version %s\n", ESP.getChipRevision(), ESP.getCpuFreqMHz(), ESP.getSdkVersion());
   Serial.printf("Flash Size %d, Flash Speed %d\n", ESP.getFlashChipSize(), ESP.getFlashChipSpeed());
   Serial.println(F("\n---------------------------------------\n"));
-  Serial.println(F("<<  Va&Cob OBDII Gauge  >>"));
-  Serial.print(F("by Ratthanin W. BUILD -> "));
+  Serial.println(F("<<  OBDII Gauge  >>"));
   Serial.println(compile_date);
 
 
 
   //init TFT display
   tft.init();
+  tft.invertDisplay(true);
   tft.setRotation(1);  //landcape
                        // Start the SPI for the touchscreen and init the touchscreen
   touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
@@ -318,8 +314,8 @@ void setup() {
   //testTouch();//test touchscreen
 
   tft.setSwapBytes(true);  //to display correct image color
-  show_spiffs_jpeg_image("/vaandcob.jpg", 0, 0);// display logo image
-  delay(3000);
+  // show_spiffs_jpeg_image("/vaandcob.jpg", 0, 0);// display logo image
+  // delay(3000);
 
   //backlight ledcAttachPin must be set after tft.init()
   ledcAttachPin(TFT_BL, backlightChannel);  //attach backlight
@@ -430,6 +426,10 @@ recent_client_addr : {0x00,0x00,0x00,0x00,0x00,0x00} array of bytes[6]
 
 /*###################################*/
 void loop() {
+
+  autoDim();
+  handleTouch();
+
   //SCAN BUTON (button press HOLD to config menu)
   if (digitalRead(SELECTOR_PIN) == LOW) {  //button pressed
     if (!press) {
@@ -467,6 +467,35 @@ void loop() {
 
   }  //else digitalRead
      //----------------------
+
+#ifndef SKIP_CONNECTION
+// --- WATCHDOG BLOCK ---
+  if (millis() - lastResponseTime > BT_TIMEOUT && foundOBD2) {
+    Serial.println("BT timeout - reconnecting...");
+    tft.fillScreen(TFT_BLACK);
+    Terminal("Connection lost! Reconnecting...", 0, 48, 320, 191);
+    digitalWrite(LED_GREEN_PIN, HIGH);  // green off
+    digitalWrite(LED_RED_PIN, LOW);     // red on - lost connection
+    foundOBD2 = false;
+    prompt = false;
+    bt_message = "";
+    BTSerial.disconnect();
+    delay(1000);
+    connectLastOBDII();
+    if (!foundOBD2) scanBTdevice();
+    if (foundOBD2) {
+      initScreen();
+      lastResponseTime = millis();  // reset watchdog
+      digitalWrite(LED_RED_PIN, HIGH);   // red off
+      digitalWrite(LED_GREEN_PIN, LOW);  // green on - reconnected
+    }
+  }
+  // --- END WATCHDOG BLOCK ---
+#endif
+
+
+
+
      //BLUETOOTH read
   while (BTSerial.available() > 0) {
     char incomingChar = BTSerial.read();
@@ -519,7 +548,7 @@ void loop() {
       pidIndex = 0;  //back to pid 0
       autoDim();     //auto backlight handle
       if (showsystem) {
-        String status = String(pidRead * 1000.0 / (millis() - runtime), 0) + " p/s " + String(tempRead, 1) + "`c";
+        String status = String(pidRead * 1000.0 / (millis() - runtime), 0) + " p/s " + String(tempRead, 1) + "`F ";
         tft.setTextColor(TFT_YELLOW, TFT_BLACK);
         tft.drawCentreString(status.c_str(), 159, 0, 2);
         runtime = millis();
