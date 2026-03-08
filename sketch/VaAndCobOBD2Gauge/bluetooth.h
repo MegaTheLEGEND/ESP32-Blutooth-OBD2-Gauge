@@ -133,7 +133,9 @@ void connectLastOBDII() {
     Terminal("OBDII Adaptor not found!",0,48,320,191);
     Serial.println(F("OBDII Adaptor not found!"));
     BTSerial.disconnect();
+#ifndef SKIP_CONNECTION
     foundOBD2 = false;
+#endif
   } else {  
     Terminal("Connected Successfully!",0,48,320,191);  
     Serial.println(F("Connected Successfully!"));
