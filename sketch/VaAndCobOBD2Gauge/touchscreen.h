@@ -1,6 +1,8 @@
 
 #include <XPT2046_Touchscreen.h>
 
+void initScreen(); 
+
 
 // Touchscreen pins
 #define XPT2046_IRQ 36   // T_IRQ
@@ -249,3 +251,31 @@ uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
     }
   }
 }  
+
+// ============================================================
+// handleTouch - left/right zones change layout page
+// ============================================================
+void handleTouch() {
+  static unsigned long lastTouch = 0;
+  const  unsigned long debounce  = 400;  // ms, prevents double-flip
+
+  uint16_t tx, ty;
+  if (!getTouch(&tx, &ty)) return;
+  if (millis() - lastTouch < debounce) return;
+  lastTouch = millis();
+
+  // divide screen into thirds
+  // left third  = previous page
+  // middle third = ignore
+  // right third  = next page
+  const uint16_t leftZone  = _width / 3;        //   0 - 106
+  const uint16_t rightZone = (_width / 3) * 2;  // 213 - 320
+
+  if (tx < leftZone) {
+    layout = (layout == 0) ? 13 : layout - 1;
+    initScreen();
+  } else if (tx > rightZone) {
+    layout = (layout == 13) ? 0 : layout + 1;
+    initScreen();
+  }
+}
