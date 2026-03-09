@@ -6,17 +6,19 @@ this header file is for configuration menu
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "music.h"         //songs data
-#include "nes_audio.h"     //nes audio player
-#include "firmware_update.h" //firmware updater function
-#include "elm327.h"        // read VIN function
+#include "music.h"           // songs data
+#include "nes_audio.h"       // nes audio player
+#include "firmware_update.h" // firmware updater function
+#include "elm327.h"          // read VIN function
 
 #define mypic_filename "/mypic.jpg"
 #define FORMAT_SPIFFS_IF_FAILED true
 
 Cartridge player(BUZZER_PIN);
 
-//configuration menu
+// ============================================================
+// MENU
+// ============================================================
 const String menuList[8] = {
   "Show pid/s & CPU Temp",
   "Load my pic 320x240 px",
@@ -29,27 +31,128 @@ const String menuList[8] = {
 };
 const uint8_t maxMenu = array_length(menuList);
 
-//menu list for warning setting
-const String parameterList[8][2] = {
-  {"CPU Overheat Temperature "+String(tempOverheat)+"`F ,offset "," `F  "},
-  {"- Engine Load"," %  "},
-  {"- Coolant Temperature"," `F  "},
-  {"- Manifold Air Pressure"," psi "},
-  {"- Engine Speed"," rpm "},
-  {"- PCM Voltage"," volt"},
-  {"- Engine Oil Temperature"," `F  "},
-  {"- Transmission Fluid Temperature"," `F  "}
-};
+// ============================================================
+// WARNING CONFIG - fully dynamic, built from pidConfig
+// index 0      = CPU temp offset
+// index 1..N   = warningValue[i-1] for each pid
+// ============================================================
+#define WARN_ROWS     7
+#define WARN_ROW_H   24
+#define WARN_Y_START 52
+#define WARN_TOTAL   (maxpidIndex + 1)
 
-const int pidWarnStep[8] = {1, 5, 1, 5, 500, 1, 1, 1};
+String getWarnLabel(uint8_t i) {
+  if (i == 0) return "CPU Temp Offset";
+  return pidConfig[i - 1][0];
+}
 
-//Sprites
+String getWarnUnit(uint8_t i) {
+  if (i == 0) return "`F";
+  return pidConfig[i - 1][1];
+}
+
+String getWarnValue(uint8_t i) {
+  if (i == 0) return String(tempOffset);
+  return warningValue[i - 1];
+}
+
+int getWarnStep(uint8_t i) {
+  if (i == 0) return 1;
+  int range = pidConfig[i-1][5].toInt() - pidConfig[i-1][4].toInt();
+  if (range > 2000) return 500;
+  if (range > 200)  return 10;
+  if (range > 50)   return 5;
+  return 1;
+}
+
+void applyWarnChange(uint8_t i, int8_t dir) {
+  int step = getWarnStep(i);
+  if (i == 0) {
+    tempOffset += dir * step;
+    if (tempOffset < -99) tempOffset = -99;
+    if (tempOffset >   0) tempOffset =   0;
+  } else {
+    int mn  = pidConfig[i-1][4].toInt();
+    int mx  = pidConfig[i-1][5].toInt();
+    int val = warningValue[i-1].toInt() + dir * step;
+    if (val < mn) val = mn;
+    if (val > mx) val = mx;
+    warningValue[i-1] = String(val);
+  }
+}
+
+void drawWarnList(uint8_t selected, uint8_t scrollTop) {
+  tft.fillRect(0, WARN_Y_START, 314, WARN_ROWS * WARN_ROW_H, TFT_BLACK);
+
+  for (uint8_t row = 0; row < WARN_ROWS; row++) {
+    uint8_t idx = scrollTop + row;
+    if (idx >= WARN_TOTAL) break;
+    int     y   = WARN_Y_START + row * WARN_ROW_H;
+    bool    sel = (idx == selected);
+
+    uint16_t rowBg = sel ? 0x1a3f : TFT_BLACK;
+    tft.fillRect(0, y, 314, WARN_ROW_H - 2, rowBg);
+
+    tft.setTextColor(0x4208, rowBg);
+    tft.drawString(String(idx), 2, y + 5, 1);
+
+    tft.setTextColor(sel ? TFT_YELLOW : TFT_WHITE, rowBg);
+    tft.drawString(getWarnLabel(idx), 18, y + 5, 2);
+
+    tft.setTextColor(sel ? 0xFD20 : TFT_GREEN, rowBg);
+    tft.drawRightString(getWarnUnit(idx), 313, y + 5, 2);
+    String val = getWarnValue(idx);
+    while (val.length() < 5) val = " " + val;
+    tft.drawRightString(val, 280, y + 5, 2);
+  }
+
+  // scrollbar
+  tft.fillRect(315, WARN_Y_START, 5, WARN_ROWS * WARN_ROW_H, 0x2104);
+  int totalH = WARN_ROWS * WARN_ROW_H;
+  int thumbH = max((int)(totalH * WARN_ROWS / WARN_TOTAL), 8);
+  int thumbY = WARN_Y_START + (scrollTop * (totalH - thumbH)) / max((int)(WARN_TOTAL - WARN_ROWS), 1);
+  tft.fillRect(315, thumbY, 5, thumbH, TFT_ORANGE);
+
+  tft.setTextColor(0x8410, TFT_BLACK);
+  if (scrollTop > 0)
+    tft.drawCentreString("^", 308, WARN_Y_START, 1);
+  if ((int)scrollTop + WARN_ROWS < (int)WARN_TOTAL)
+    tft.drawCentreString("v", 308, WARN_Y_START + WARN_ROWS * WARN_ROW_H - 8, 1);
+}
+
+void drawWarnHeader() {
+  tft.fillRect(0, 0, 320, WARN_Y_START, TFT_BLACK);
+  tft.fillRectVGradient(0, 0, 320, 26, TFT_ORANGE, 0xfc00);
+  tft.setTextColor(TFT_BLACK);
+  tft.drawCentreString("Warning Settings", 159, 4, 4);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("Tap row to select   Btn=save & exit", 0, 28, 1);
+}
+
+void drawWarnFooter() {
+  tft.fillRect(0, 220, 320, 20, TFT_BLACK);
+  tft.fillRoundRect(0,   220, 70, 20, 4, 0x3000);
+  tft.setTextColor(TFT_RED, 0x3000);
+  tft.drawCentreString("-  decrease", 35, 222, 2);
+  tft.fillRoundRect(250, 220, 70, 20, 4, 0x0240);
+  tft.setTextColor(TFT_GREEN, 0x0240);
+  tft.drawCentreString("increase  +", 285, 222, 2);
+  tft.fillRoundRect(100, 220, 120, 20, 4, 0x1082);
+  tft.setTextColor(TFT_WHITE, 0x1082);
+  tft.drawCentreString("RESET DEFAULT", 160, 222, 2);
+}
+
+// ============================================================
+// SPRITES for animation
+// ============================================================
 TFT_eSprite car   = TFT_eSprite(&tft);
 TFT_eSprite bk    = TFT_eSprite(&tft);
 TFT_eSprite pole  = TFT_eSprite(&tft);
 TFT_eSprite fence = TFT_eSprite(&tft);
 
-//------ NES Audio play on Task0
+// ============================================================
+// NES Audio - play on Core 0
+// ============================================================
 TaskHandle_t TaskHandle0 = NULL;
 
 void TaskPlayMusic(void *pvParameters) {
@@ -59,16 +162,22 @@ void TaskPlayMusic(void *pvParameters) {
   }
 }
 
-//----------------------------
+// ============================================================
+// ABOUT PAGE ANIMATION
+// ============================================================
 void animation() {
 #define BK_HEIGHT 80
 #define BK_WIDTH  235
-  uint8_t  cur_x    = 68;
-  uint8_t  cur_y    = 10;
-  uint8_t  dash_x   = 20;
-  int16_t  tag_x    = 235;
-  int16_t  fence_x  = 0;
+  uint8_t  cur_x     = 68;
+  uint8_t  cur_y     = 10;
+  uint8_t  dash_x    = 20;
+  int16_t  tag_x     = 235;
+  int16_t  fence_x   = 0;
   uint8_t  ani_speed = 2;
+
+  int           scrollOffset   = 0;
+  unsigned long scrollLastTick = 0;
+  const char*   scrollStr      = "  github.com/MegaTheLEGEND/ESP32-Blutooth-OBD2-Gauge  ";
 
   bk.createSprite(BK_WIDTH, BK_HEIGHT);
   car.createSprite(CAR_WIDTH, CAR_HEIGHT);
@@ -82,15 +191,12 @@ void animation() {
   fence.pushImage(0, 0, FENCE_WIDTH, FENCE_HEIGHT, fence1);
 
   tft.fillScreen(TFT_BLACK);
-  tft.drawBitmap(0, 159, qrcode, QRCODE_WIDTH, QRCODE_HEIGHT, TFT_WHITE);
   tft.setTextColor(TFT_WHITE);
   tft.drawString(">MAP/ENG LOAD/ECT/EOT/TFT/ENG SPD/PCM Volt", 0, 40, 2);
-  tft.drawString(">Warning, Automatic Dim/OnOff/O็verheat Shutdown", 0, 60, 2);
+  tft.drawString(">Warning, Automatic Dim/OnOff/Overheat Shutdown", 0, 60, 2);
   tft.drawString(">Read DTC Code & Clear MIL Status", 0, 80, 2);
-  tft.drawString("* FW-\"VaandCobOBD2Gauge.bin\" * Image-\"mypic.jpg\"", 0, 100, 2);
-  tft.drawString("* Facebook : www.facebook.com/vaandcob", 0, 120, 2);
   tft.setTextColor(TFT_YELLOW);
-  tft.drawString("  [ Manual ] ----------------[ Press button to exit ]", 0, 140, 2);
+  tft.drawString("   ---  [ Press button to exit ]  ---", 0, 140, 2);
   tft.setTextColor(TFT_CYAN);
   String txt = "[ " + serial_no + " ] BUILD : " + compile_date;
   tft.drawString(txt, 0, 0, 2);
@@ -100,23 +206,23 @@ void animation() {
   tft.drawString(txt, 0, 20, 2);
 
   bk.setTextColor(TFT_BLACK, TFT_ORANGE);
+  int strW = tft.textWidth(scrollStr, 2);
 
   while (digitalRead(SELECTOR_PIN) == HIGH) {
     bk.fillSprite(0x4228);
     bk.fillRect(0, 0, 235, 16, TFT_LIGHTGREY);
     bk.fillRect(0, 16, 235, 3, 0x8430);
-    for (int16_t i = 0; i < 5; i++) {
+    for (int16_t i = 0; i < 5; i++)
       bk.drawFastHLine((dash_x - 20) * 1.5 + (60 * i), 45, 15, TFT_WHITE);
-    }
-    dash_x = dash_x - ani_speed;
+    dash_x -= ani_speed;
     if (dash_x <= 0) dash_x = 40;
-    tag_x = tag_x - ani_speed;
+    tag_x -= ani_speed;
     if (tag_x <= -80) tag_x = 235;
-    bk.drawString("< Thank You >", tag_x, 0, 2);
+    bk.drawString("< FOOD >", tag_x, 0, 2);
     int8_t move = random(-1, 2);
-    cur_x = cur_x + move;
-    move  = random(-1, 2);
-    cur_y = cur_y + move;
+    cur_x += move;
+    move   = random(-1, 2);
+    cur_y += move;
     if (cur_x > 235 - CAR_WIDTH)  cur_x = 235 - CAR_WIDTH;
     if (cur_x < 1)                 cur_x = 1;
     if (cur_y < 1)                 cur_y = 1;
@@ -124,74 +230,36 @@ void animation() {
     car.pushToSprite(&bk, cur_x, cur_y, TFT_BLACK);
     for (int i = 0; i < 8; i++)
       fence.pushToSprite(&bk, fence_x * 2 + (FENCE_WIDTH * i), 80 - FENCE_HEIGHT, TFT_BLACK);
-    fence_x = fence_x - ani_speed;
+    fence_x -= ani_speed;
     if (fence_x <= -FENCE_WIDTH + ani_speed) fence_x = 0;
     pole.pushToSprite(&bk, tag_x * 2, 80 - POLE_HEIGHT, TFT_BLACK);
     bk.pushSprite(85, 159);
+
+    if (millis() - scrollLastTick >= 30) {
+      scrollLastTick = millis();
+      tft.fillRect(0, 120, 320, 18, TFT_BLACK);
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.drawString(scrollStr, -scrollOffset, 120, 2);
+      scrollOffset += 2;
+      if (scrollOffset > strW) scrollOffset = 0;
+    }
+
     digitalWrite(LED_RED_PIN,   random(0, 2));
     digitalWrite(LED_GREEN_PIN, random(0, 2));
     digitalWrite(LED_BLUE_PIN,  random(0, 2));
     checkCPUTemp();
     autoDim();
   }
+
   car.deleteSprite();
   bk.deleteSprite();
   pole.deleteSprite();
   fence.deleteSprite();
 }
 
-/*------------------*/
-void setWarning(int8_t index, int8_t change) {
-  for (uint8_t i = 0; i < maxpidIndex + 1; i++) {
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString(parameterList[i][0], 0, 58 + (i * 16), 2);
-    tft.drawRightString(parameterList[i][1], 319, 57 + (i * 16), 2);
-    String result = "";
-    if (i == 0) result = String(tempOffset);
-    else        result = warningValue[i - 1];
-    switch (result.length()) {
-      case 1: result = "   " + result; break;
-      case 2: result = "  "  + result; break;
-      case 3: result = " "   + result; break;
-    }
-    tft.drawRightString(result, 285, 57 + (i * 16), 2);
-  }
-
-  tft.setTextColor(TFT_BLACK, TFT_YELLOW);
-  if (index == 0) {
-    int mn = -99, mx = 0;
-    if (change == -1) { tempOffset -= pidWarnStep[index]; if (tempOffset < mn) tempOffset = mn; }
-    if (change ==  1) { tempOffset += pidWarnStep[index]; if (tempOffset > mx) tempOffset = mx; }
-    String result = String(tempOffset);
-    switch (result.length()) {
-      case 1: result = "   " + result; break;
-      case 2: result = "  "  + result; break;
-      case 3: result = " "   + result; break;
-    }
-    tft.drawRightString(result, 285, 57 + (index * 16), 2);
-  } else {
-    int mn = pidConfig[index - 1][4].toInt();
-    int mx = pidConfig[index - 1][5].toInt();
-    if (change == -1) {
-      warningValue[index-1] = String(warningValue[index-1].toInt() - pidWarnStep[index]);
-      if (warningValue[index-1].toInt() < mn) warningValue[index-1] = String(mn);
-    }
-    if (change == 1) {
-      warningValue[index-1] = String(warningValue[index-1].toInt() + pidWarnStep[index]);
-      if (warningValue[index-1].toInt() > mx) warningValue[index-1] = String(mx);
-    }
-    String result = warningValue[index - 1];
-    switch (result.length()) {
-      case 1: result = "   " + result; break;
-      case 2: result = "  "  + result; break;
-      case 3: result = " "   + result; break;
-    }
-    tft.drawRightString(result, 285, 57 + (index * 16), 2);
-  }
-  delay(300);
-}
-
-/*--------------------*/
+// ============================================================
+// LOAD MY PIC
+// ============================================================
 void loadMyPic() {
   if (!SD.begin()) {
     tft.pushImage(129, 44, 60, 60, sdcard);
@@ -239,7 +307,9 @@ void loadMyPic() {
   beep();
 }
 
-/*----------------*/
+// ============================================================
+// MENU LIST RENDERER
+// ============================================================
 void listMenu(uint8_t choice) {
   if (showsystem) tft.pushImage(0, 35, 25, 25, switchon);
   else            tft.pushImage(0, 35, 25, 25, switchoff);
@@ -250,32 +320,28 @@ void listMenu(uint8_t choice) {
   tft.pushImage(159, 155, 25, 25, autooff);
   tft.pushImage(0,   185, 25, 25, about);
   tft.pushImage(159, 185, 25, 25, quit);
+
   for (uint8_t i = 0; i < maxMenu; i++) {
     if (choice == i) tft.setTextColor(TFT_WHITE, TFT_BLUE);
     else             tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    if      (i < 4) tft.drawString(menuList[i], 32,           35 + 30 * i,      4);
-    else if (i < 6) tft.drawString(menuList[i], 32+(i-4)*159, 35 + 30 * 4,      4);
-    else            tft.drawString(menuList[i], 32+(i-6)*159, 35 + 30 * 5,      4);
+    if      (i < 4) tft.drawString(menuList[i], 32,           35 + 30 * i, 4);
+    else if (i < 6) tft.drawString(menuList[i], 32+(i-4)*159, 35 + 30 * 4, 4);
+    else            tft.drawString(menuList[i], 32+(i-6)*159, 35 + 30 * 5, 4);
   }
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
   tft.drawString("Touch top/bottom to navigate, center to select", 0, 211, 2);
   tft.drawString("Or: Press=Next  Hold=Select", 0, 227, 2);
 }
 
-/*----------------*/
+// ============================================================
+// MAIN CONFIG MENU
+// ============================================================
 void configMenu() {
   uint8_t select      = 0;
   bool    pressed     = false;
   long    holdtimer   = 0;
   bool    currentFlag = showsystem;
 
-  // --------------------------------------------------------
-  // Touch navigation helper
-  // top third    = prev  (-1)
-  // middle third = select (2)
-  // bottom third = next   (1)
-  // no touch     = 0
-  // --------------------------------------------------------
   auto readTouchNav = [&]() -> int8_t {
     static unsigned long lastTouch = 0;
     const  unsigned long debounce  = 350;
@@ -284,9 +350,9 @@ void configMenu() {
     if (millis() - lastTouch < debounce) return 0;
     lastTouch = millis();
     clickSound();
-    if (ty < (_height / 3))              return -1;  // top    = prev
-    if (ty > ((_height / 3) * 2))        return  1;  // bottom = next
-    return 2;                                         // center = select
+    if (ty < (_height / 3))       return -1;
+    if (ty > ((_height / 3) * 2)) return  1;
+    return 2;
   };
 
   beep();
@@ -299,7 +365,6 @@ void configMenu() {
 
   while (true) {
 
-    // ---- Physical button handling ----
     if (digitalRead(SELECTOR_PIN) == LOW) {
       if (!pressed) {
         pressed   = true;
@@ -319,40 +384,32 @@ void configMenu() {
       }
     }
 
-    // ---- Touch navigation ----
     {
       int8_t t = readTouchNav();
       if (t == -1) {
-        // top = previous menu item
         select = (select == 0) ? maxMenu - 1 : select - 1;
         listMenu(select);
       } else if (t == 1) {
-        // bottom = next menu item
         select++;
         if (select == maxMenu) select = 0;
         listMenu(select);
       } else if (t == 2) {
-        // center = select
         goto doSelect;
       }
     }
 
     checkCPUTemp();
     autoDim();
-    continue;  // skip doSelect block unless jumped to
+    continue;
 
-    // ========================================================
-    // doSelect - triggered by button hold OR center tap
-    // ========================================================
     doSelect:
     pressed = false;
     prompt  = true;
 
-    // -------- TOGGLE SHOW SYSTEM STATUS --------
+    // -------- TOGGLE SHOW SYSTEM --------
     if (select == 0) {
       beepbeep();
       showsystem = !showsystem;
-      tft.setTextColor(TFT_WHITE, TFT_BLUE);
       if (showsystem) tft.pushImage(0, 35, 25, 25, switchon);
       else            tft.pushImage(0, 35, 25, 25, switchoff);
     }
@@ -370,7 +427,8 @@ void configMenu() {
       }
       clickSound();
       tft.fillScreen(TFT_BLACK);
-      tft.setTextColor(TFT_BLACK, TFT_ORANGE);
+      tft.fillRectVGradient(0, 0, 320, 26, TFT_ORANGE, 0xfc00);
+      tft.setTextColor(TFT_BLACK);
       tft.drawCentreString("[---   Configuration Menu   ---]", 159, 0, 4);
       listMenu(select);
     }
@@ -393,7 +451,7 @@ void configMenu() {
         uint16_t t_x = 0, t_y = 0;
         bool touched = getTouch(&t_x, &t_y);
         if (touched && (t_y > 44) && (t_y < 104)) {
-          if ((t_x >= 56)  && (t_x < 116)) { clickSound(); updateFirmwareSD();   }
+          if ((t_x >= 56)  && (t_x < 116)) { clickSound(); updateFirmwareSD();         }
           if ((t_x >= 203) && (t_x < 263)) { clickSound(); updateFirmwareWIFI(); break; }
         }
         delay(300);
@@ -404,68 +462,85 @@ void configMenu() {
 
     // -------- WARNING SETTING --------
     if (select == 3) {
-      int8_t warningMenuIndex = 0;
-      int8_t inc_dec          = 0;
       clickSound();
-      tft.fillRect(0, 30, 320, 210, TFT_BLACK);
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      tft.drawCentreString("[ Warning Parameter Setting]", 159, 30, 2);
-      tft.drawFastHLine(0, 50, 320, TFT_RED);
-      tft.setTextColor(TFT_WHITE, TFT_RED);
-      tft.drawCentreString("[- Press button to Save & Exit -]", 159, 190, 2);
-      for (uint8_t i = 0; i < 5; i++)
-        tft.fillRoundRect(i * 64, 211, 60, 30, 5, TFT_NAVY);
-      tft.setTextColor(TFT_WHITE);
-      tft.drawCentreString("DEFAULT", 31,  217, 2);
-      tft.drawCentreString("^ PREV",  95,  217, 2);
-      tft.drawCentreString("NEXT v",  159, 217, 2);
-      tft.drawCentreString("-",       223, 206, 6);
-      tft.fillRect(286, 219, 3, 16, TFT_WHITE);
-      tft.fillRect(280, 225, 16, 3, TFT_WHITE);
-      setWarning(warningMenuIndex, inc_dec);
-      delay(1000);
+      uint8_t warnSelected  = 0;
+      uint8_t warnScrollTop = 0;
+
+      tft.fillScreen(TFT_BLACK);
+      drawWarnHeader();
+      drawWarnList(warnSelected, warnScrollTop);
+      drawWarnFooter();
+      delay(400);
+
       while (digitalRead(SELECTOR_PIN) == HIGH) {
         autoDim();
         checkCPUTemp();
+
         if (foundOBD2) {
-          String status = "    " + String(tempRead, 1) + "`F";
           tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-          tft.drawRightString(status.c_str(), 319, 30, 2);
+          tft.drawRightString(String(tempRead, 1) + "`F  ", 319, 28, 1);
         }
+
         uint16_t t_x = 0, t_y = 0;
-        bool touched = getTouch(&t_x, &t_y);
-        if (touched) {
+        if (getTouch(&t_x, &t_y)) {
           clickSound();
-          if (t_y > 211) {
-            // bottom button row
-            if (t_x < 64) {
-              tempOffset = factoryTempOffset;
-              for (uint8_t i = 0; i < maxpidIndex; i++) warningValue[i] = pidConfig[i][8];
+          delay(150);
+
+          if (t_y >= 220) {
+            if (t_x < 100) {
+              applyWarnChange(warnSelected, -1);
+            } else if (t_x >= 220) {
+              applyWarnChange(warnSelected,  1);
+            } else {
+              if (warnSelected == 0)
+                tempOffset = factoryTempOffset;
+              else
+                warningValue[warnSelected-1] = pidConfig[warnSelected-1][8];
             }
-            if ((t_x >= 64)  && (t_x < 128)) warningMenuIndex--;
-            if ((t_x >= 128) && (t_x < 192)) warningMenuIndex++;
-            if ((t_x >= 192) && (t_x < 256)) inc_dec = -1;
-            if ((t_x >= 256) && (t_x < 320)) inc_dec =  1;
-          } else {
-            // touch nav within warning list
-            // top third = prev param, bottom third = next param
-            if      (t_y < _height / 3)       warningMenuIndex--;
-            else if (t_y > (_height / 3) * 2) warningMenuIndex++;
+            drawWarnList(warnSelected, warnScrollTop);
+
+          } else if (t_y >= WARN_Y_START &&
+                     t_y <  WARN_Y_START + WARN_ROWS * WARN_ROW_H) {
+            uint8_t tappedRow = (t_y - WARN_Y_START) / WARN_ROW_H;
+            uint8_t tappedIdx = warnScrollTop + tappedRow;
+            if (tappedIdx < WARN_TOTAL) {
+              warnSelected = tappedIdx;
+              drawWarnList(warnSelected, warnScrollTop);
+              drawWarnFooter();
+            }
+
+          } else if (t_y < WARN_Y_START) {
+            if (warnScrollTop > 0) {
+              warnScrollTop--;
+              drawWarnList(warnSelected, warnScrollTop);
+            }
           }
-          if (warningMenuIndex == maxpidIndex + 1) warningMenuIndex = 0;
-          if (warningMenuIndex < 0)                warningMenuIndex = maxpidIndex;
-          setWarning(warningMenuIndex, inc_dec);
-          inc_dec = 0;
+
+          // tap bottom row = scroll down
+          int bottomRowY = WARN_Y_START + (WARN_ROWS - 1) * WARN_ROW_H;
+          if (t_y >= (uint16_t)bottomRowY &&
+              t_y <  (uint16_t)(bottomRowY + WARN_ROW_H) &&
+              (int)warnScrollTop + WARN_ROWS < (int)WARN_TOTAL) {
+            warnScrollTop++;
+            drawWarnList(warnSelected, warnScrollTop);
+          }
         }
+        yield();
       }
+
       pref.putInt("tempOffset", tempOffset);
       for (uint8_t i = 0; i < maxpidIndex; i++)
         pref.putString(pidConfig[i][0].c_str(), warningValue[i]);
+
+      tft.fillScreen(TFT_BLACK);
       tft.setTextColor(TFT_BLACK, TFT_GREEN);
-      tft.drawCentreString("Parameters Saved.", 159, 120, 4);
+      tft.drawCentreString("Settings Saved.", 159, 115, 4);
       beep();
-      delay(1000);
-      tft.fillRect(0, 30, 320, 210, TFT_BLACK);
+      delay(800);
+      tft.fillScreen(TFT_BLACK);
+      tft.fillRectVGradient(0, 0, 320, 26, TFT_ORANGE, 0xfc00);
+      tft.setTextColor(TFT_BLACK);
+      tft.drawCentreString("[---   Configuration Menu   ---]", 159, 0, 4);
       listMenu(select);
     }
 
@@ -565,13 +640,13 @@ void configMenu() {
               uint8_t code  = strtol(dtc_1.substring(0, 1).c_str(), 0, 16);
               dtc_1         = dtcMap[code] + dtc_1.substring(1);
               index++;
-              String dtc_2      = hexcode[index];
+              String dtc_2       = hexcode[index];
               dtcList[no_of_dtc] = dtc_1 + dtc_2;
               Serial.print(dtcList[no_of_dtc] + ",");
               no_of_dtc++;
             }
             tft.setTextColor(TFT_RED, TFT_BLACK);
-            String txt2 = "MIL is ON - No of DTCs = " + String(no_of_dtc);
+            String txt2 = "MIL is ON - DTCs = " + String(no_of_dtc);
             tft.drawCentreString(txt2, 159, 58, 4);
             tft.drawFastHLine(0, 85, 320, TFT_WHITE);
             Serial.printf("\nNo of DTCs = %d\n", no_of_dtc);
@@ -588,9 +663,9 @@ void configMenu() {
             tft.fillRoundRect(0, 215, 127, 24, 12, TFT_RED);
             tft.setTextColor(TFT_WHITE);
             tft.drawCentreString("Clear MIL", 63, 217, 4);
-          }  // else !error_read
-        }  // else if A >= 0x80
-      }  // else if error_cnt
+          }
+        }
+      }
 
       while (digitalRead(SELECTOR_PIN) == HIGH) {
         checkCPUTemp();
@@ -613,7 +688,7 @@ void configMenu() {
       }
       tft.fillRect(0, 28, 320, 239, TFT_BLACK);
       listMenu(select);
-    }  // select == 4
+    }
 
     // -------- AUTO-OFF VOLTAGE --------
     if (select == 5) {
@@ -623,8 +698,8 @@ void configMenu() {
       tft.setTextColor(TFT_WHITE, TFT_BLACK);
       tft.drawString("Gauge Auto-off Setting", 40, 30, 4);
       tft.drawString("Set detection PCM voltage to turn off gauge.", 10, 65, 2);
-      tft.drawString("If gauge turn off while the engnine is running", 10, 85, 2);
-      tft.drawString("Please lower down the voltage", 10, 105, 2);
+      tft.drawString("If gauge turns off while engine is running,", 10, 85, 2);
+      tft.drawString("please lower the voltage value.", 10, 105, 2);
       tft.drawString("Volt", 220, 135, 4);
       tft.setTextColor(TFT_BLACK, TFT_WHITE);
       tft.drawCentreString("[- Press button to exit -]", 159, 180, 4);
@@ -644,9 +719,10 @@ void configMenu() {
         uint16_t t_x = 0, t_y = 0;
         if (getTouch(&t_x, &t_y) && (t_y > 211)) {
           clickSound();
-          if (t_x < 64)                       ecu_off_volt = factoryECUOff;
-          if ((t_x >= 192) && (t_x < 256))  { ecu_off_volt -= 0.1; if (ecu_off_volt < 11.0) ecu_off_volt = 11.0; }
-          if ((t_x >= 256) && (t_x < 320))  { ecu_off_volt += 0.1; if (ecu_off_volt > 15.0) ecu_off_volt = 15.0; }
+          if (t_x < 64)                      ecu_off_volt = factoryECUOff;
+          if ((t_x >= 192) && (t_x < 256)) { ecu_off_volt -= 0.1; if (ecu_off_volt < 11.0) ecu_off_volt = 11.0; }
+          if ((t_x >= 256) && (t_x < 320)) { ecu_off_volt += 0.1; if (ecu_off_volt > 15.0) ecu_off_volt = 15.0; }
+          tft.setTextColor(TFT_YELLOW, TFT_BLACK);
           tft.drawCentreString(String(ecu_off_volt, 1).c_str(), 159, 135, 4);
           delay(300);
         }
@@ -658,7 +734,7 @@ void configMenu() {
       delay(1000);
       tft.fillRect(0, 30, 320, 210, TFT_BLACK);
       listMenu(select);
-    }  // select == 5
+    }
 
     // -------- ABOUT --------
     if (select == 6) {

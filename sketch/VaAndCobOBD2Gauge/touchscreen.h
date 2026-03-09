@@ -257,30 +257,40 @@ uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
 
 void handleTouch() {
   static unsigned long lastTouch = 0;
-  const  unsigned long debounce  = 400;
+  const  unsigned long debounce  = 500;
 
   uint16_t tx, ty;
   if (!getTouch(&tx, &ty))             return;
   if (millis() - lastTouch < debounce) return;
 
-  // record where finger went down
   uint16_t startX = tx;
   uint16_t startY = ty;
-  unsigned long pressStart = millis();
+  uint16_t endX   = tx;
+  uint16_t endY   = ty;
 
-  // track finger movement
-  uint16_t endX = tx;
-  while (ts.touched() && millis() - pressStart < 600) {
+  // track finger for up to 300ms looking for movement
+  unsigned long pressStart = millis();
+  while (millis() - pressStart < 300) {
+    if (!ts.touched()) break;  // finger lifted - stop early
     uint16_t cx, cy;
-    if (getTouch(&cx, &cy)) endX = cx;
-    delay(10);
+    if (getTouch(&cx, &cy)) {
+      endX = cx;
+      endY = cy;
+    }
+    delay(8);
   }
 
   lastTouch = millis();
-  int16_t deltaX = (int16_t)endX - (int16_t)startX;
 
-  // ---- swipe left (finger moves left = previous page) ----
-  if (deltaX < -40) {
+  int16_t deltaX = (int16_t)endX - (int16_t)startX;
+  int16_t deltaY = (int16_t)endY - (int16_t)startY;
+
+  // only treat as swipe if horizontal movement dominates
+  // and exceeds threshold - prevents accidental swipe on tap
+  bool isSwipe = (abs(deltaX) > 50) && (abs(deltaX) > abs(deltaY) * 2);
+
+  // ---- swipe left = previous page ----
+  if (isSwipe && deltaX < 0) {
     if (graphActive) { graphExit(); return; }
     layout = (layout == 0) ? max_layout - 1 : layout - 1;
     pref.putUShort("layout", layout);
@@ -288,8 +298,8 @@ void handleTouch() {
     return;
   }
 
-  // ---- swipe right (finger moves right = next page) ----
-  if (deltaX > 40) {
+  // ---- swipe right = next page ----
+  if (isSwipe && deltaX > 0) {
     if (graphActive) { graphExit(); return; }
     layout = (layout >= max_layout - 1) ? 0 : layout + 1;
     pref.putUShort("layout", layout);
@@ -297,7 +307,7 @@ void handleTouch() {
     return;
   }
 
-  // ---- tap (minimal movement) = graph or exit ----
+  // ---- tap = graph open or exit ----
   if (graphActive) {
     graphExit();
     return;
@@ -313,10 +323,10 @@ void handleTouch() {
     tappedSlot = col * 3 + row;
   } else if (ld.grid == GRID_MIXED) {
     if (startX < 160) {
-      tappedSlot = startY / 80;  // slots 0-2
+      tappedSlot = startY / 80;
       if (tappedSlot > 2) tappedSlot = 2;
     } else {
-      tappedSlot = 3 + (startX - 160) / 80;  // slots 3-4
+      tappedSlot = 3 + (startX - 160) / 80;
     }
   } else {
     tappedSlot = startX / 80;
