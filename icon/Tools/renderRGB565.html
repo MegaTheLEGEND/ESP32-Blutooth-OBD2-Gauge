@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RGB565 Image Previewer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg: #0d0d0f;
+    --panel: #141416;
+    --border: #2a2a2e;
+    --accent: #00e5ff;
+    --accent2: #ff4d6d;
+    --text: #e8e8ec;
+    --muted: #666672;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    margin-bottom: 36px;
+    letter-spacing: 0.1em;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 20px;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  label {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  textarea {
+    width: 100%;
+    height: 320px;
+    background: #0a0a0c;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: #a0ffa8;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    padding: 14px;
+    resize: vertical;
+    outline: none;
+    line-height: 1.7;
+    transition: border-color 0.2s;
+  }
+
+  textarea:focus { border-color: var(--accent); }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  input[type=number] {
+    background: #0a0a0c;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type=number]:focus { border-color: var(--accent); }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 14px; }
+
+  button {
+    flex: 1;
+    padding: 11px;
+    border-radius: 7px;
+    border: none;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+
+  button:active { transform: scale(0.97); }
+
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .btn-secondary:hover { background: rgba(0,229,255,0.07); }
+
+  /* Right panel */
+  .right-panel { display: flex; flex-direction: column; gap: 16px; }
+
+  .preview-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    min-height: 200px;
+    justify-content: center;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .zoom-row {
+    display: flex; gap: 8px; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+
+  .zoom-row input { width: 80px; }
+
+  .stats-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .stat-row:last-child { border-bottom: none; }
+  .stat-key { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; }
+  .stat-val { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+
+  .error {
+    color: var(--accent2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 10px 14px;
+    background: rgba(255,77,109,0.08);
+    border: 1px solid rgba(255,77,109,0.3);
+    border-radius: 6px;
+    display: none;
+  }
+
+  .placeholder-msg {
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  .download-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.78rem;
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .download-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .swap-row {
+    display: flex; align-items: center; gap: 8px; margin-top: 6px;
+  }
+  .swap-row label { margin: 0; font-size: 0.68rem; color: var(--muted); cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h1>RGB565 Previewer</h1>
+<p class="subtitle">// Arduino · PROGMEM · raw hex arrays</p>
+
+<div class="layout">
+  <!-- Left: input -->
+  <div class="panel">
+    <label>Paste your C array here</label>
+    <textarea id="input" placeholder="static const unsigned short myImage[625] PROGMEM={&#10;0x1000, 0x0040, 0x0000, ...&#10;};"></textarea>
+
+    <div class="controls">
+      <div class="field">
+        <label>Width (px)</label>
+        <input type="number" id="width" value="25" min="1" max="2048">
+      </div>
+      <div class="field">
+        <label>Height (px)</label>
+        <input type="number" id="height" value="24" min="1" max="2048">
+      </div>
+    </div>
+
+    <div class="swap-row">
+      <input type="checkbox" id="swapBytes">
+      <label for="swapBytes">Swap byte order (if colors look wrong)</label>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" onclick="render()">▶ Render</button>
+      <button class="btn-secondary" onclick="autoDetect()">Auto-detect size</button>
+    </div>
+
+    <div class="error" id="error"></div>
+  </div>
+
+  <!-- Right: preview + stats -->
+  <div class="right-panel">
+    <div class="preview-box" id="previewBox">
+      <p class="placeholder-msg">Paste an array and<br>click Render to preview</p>
+    </div>
+
+    <div class="zoom-row">
+      <label style="margin:0;text-transform:none;letter-spacing:0">Zoom:</label>
+      <input type="number" id="zoom" value="2" min="1" max="32">
+      <span>× pixel scale</span>
+    </div>
+
+    <div class="stats-box" id="stats" style="display:none">
+      <div class="stat-row"><span class="stat-key">PIXEL COUNT</span><span class="stat-val" id="s-count">—</span></div>
+      <div class="stat-row"><span class="stat-key">DIMENSIONS</span><span class="stat-val" id="s-dims">—</span></div>
+      <div class="stat-row"><span class="stat-key">AUTO SQUARE</span><span class="stat-val" id="s-sqrt">—</span></div>
+      <div class="stat-row"><span class="stat-key">BYTES</span><span class="stat-val" id="s-bytes">—</span></div>
+    </div>
+
+    <button class="download-btn" id="dlBtn" style="display:none" onclick="download()">⬇ Download PNG</button>
+  </div>
+</div>
+
+<script>
+  let lastCanvas = null;
+
+function parseHex(text) {
+  const stripped = text.split('\n').map(line => line.replace(/\/\/.*$/, '')).join('\n');
+  const matches = stripped.match(/0x[0-9A-Fa-f]{1,4}/g);
+  if (!matches) return null;
+  return matches.map(h => parseInt(h, 16));
+}
+
+  function rgb565(val, swap) {
+    if (swap) val = ((val & 0xFF) << 8) | ((val >> 8) & 0xFF);
+    const r = ((val >> 11) & 0x1F) << 3;
+    const g = ((val >> 5)  & 0x3F) << 2;
+    const b = ((val >> 0)  & 0x1F) << 3;
+    return [r, g, b];
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function clearError() {
+    document.getElementById('error').style.display = 'none';
+  }
+
+  function autoDetect() {
+    clearError();
+    const pixels = parseHex(document.getElementById('input').value);
+    if (!pixels) { showError('No hex values found.'); return; }
+    const n = pixels.length;
+    const sq = Math.round(Math.sqrt(n));
+    document.getElementById('s-count').textContent = n;
+    document.getElementById('s-bytes').textContent = (n * 2) + ' bytes';
+    document.getElementById('s-dims').textContent = '—';
+    document.getElementById('s-sqrt').textContent = Number.isInteger(Math.sqrt(n))
+      ? `${sq} × ${sq} ✓` : `≈ ${sq} × ${sq} (not perfect square)`;
+    document.getElementById('stats').style.display = 'block';
+    if (Number.isInteger(Math.sqrt(n))) {
+      document.getElementById('width').value = sq;
+      document.getElementById('height').value = sq;
+    }
+  }
+
+  function render() {
+    clearError();
+    const text = document.getElementById('input').value;
+    const pixels = parseHex(text);
+    if (!pixels || pixels.length === 0) { showError('No hex values found in input.'); return; }
+
+    const w = parseInt(document.getElementById('width').value);
+    const h = parseInt(document.getElementById('height').value);
+    const zoom = Math.max(1, parseInt(document.getElementById('zoom').value) || 8);
+    const swap = document.getElementById('swapBytes').checked;
+
+    if (pixels.length < w * h) {
+      showError(`Need ${w * h} pixels for ${w}×${h}, but only found ${pixels.length}.`);
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w * zoom;
+    canvas.height = h * zoom;
+    const ctx = canvas.getContext('2d');
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const [r, g, b] = rgb565(pixels[y * w + x], swap);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x * zoom, y * zoom, zoom, zoom);
+      }
+    }
+
+    lastCanvas = canvas;
+    const box = document.getElementById('previewBox');
+    box.innerHTML = '';
+    box.appendChild(canvas);
+
+    document.getElementById('s-count').textContent = pixels.length;
+    document.getElementById('s-dims').textContent = `${w} × ${h}`;
+    const sq = Math.sqrt(pixels.length);
+    document.getElementById('s-sqrt').textContent = Number.isInteger(sq) ? `${sq} × ${sq} ✓` : `—`;
+    document.getElementById('s-bytes').textContent = (pixels.length * 2) + ' bytes';
+    document.getElementById('stats').style.display = 'block';
+    document.getElementById('dlBtn').style.display = 'block';
+  }
+
+  function download() {
+    if (!lastCanvas) return;
+    const a = document.createElement('a');
+    a.download = 'rgb565_image.png';
+    a.href = lastCanvas.toDataURL('image/png');
+    a.click();
+  }
+
+  // Auto-render on load with the example data
+  window.addEventListener('load', () => {
+    document.getElementById('input').value = `static const unsigned short engine[625] PROGMEM={
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0010 (16) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0020 (32) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0030 (48) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0040 (64) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0050 (80) pixels
+0x0000, 0x0000, 0x0000, 0x1040, 0x1040, 0x1840, 0x1840, 0x1840, 0x1860, 0x1860, 0x1040, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0060 (96) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x7348, 0xDDEE, 0xE5EA, 0xEDE7, 0xEDE6,   // 0x0070 (112) pixels
+0xEDE6, 0xEDE7, 0xE5EA, 0xD5EE, 0x62A6, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0080 (128) pixels
+0x0000, 0x0000, 0x0000, 0x0800, 0x2880, 0x59A0, 0x61C0, 0xE581, 0xFE02, 0xFE02, 0xE541, 0x61C0, 0x59A0, 0x2060, 0x0800, 0x0000,   // 0x0090 (144) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0800, 0x1000, 0x2040, 0xB485, 0xD566, 0xDD65,   // 0x00A0 (160) pixels
+0xEDE5, 0xF605, 0xEE05, 0xEDE5, 0xDD65, 0xD567, 0xA445, 0x1840, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0800,   // 0x00B0 (176) pixels
+0x18A0, 0x3120, 0x1020, 0x6262, 0x7B02, 0xA404, 0xDDEA, 0x7AA0, 0x7280, 0x7280, 0x7280, 0x7280, 0x7280, 0x7280, 0x7AE0, 0xE5EB,   // 0x00C0 (192) pixels
+0x4980, 0x1000, 0x0800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x1820, 0xBD0A, 0xAC67, 0x7280, 0xDDEB, 0xC507, 0xBD09, 0x8BA6,   // 0x00D0 (208) pixels
+0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x1020, 0xDDEB, 0xCD25, 0xB484, 0x6220, 0x0800, 0x0000, 0x0000, 0x0000,   // 0x00E0 (224) pixels
+0x0000, 0x38E0, 0xE5EA, 0xB483, 0x8B20, 0xC4C4, 0x2000, 0x1800, 0x0800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x00F0 (240) pixels
+0x0800, 0x6240, 0x8B60, 0xBCA2, 0xD588, 0x1000, 0x3940, 0x5201, 0x20A0, 0x0000, 0x38E0, 0xE5E9, 0xBC81, 0x9320, 0xBCC6, 0x1800,   // 0x0100 (256) pixels
+0x0800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0800, 0x1000, 0x6A40, 0xE5C7, 0x5160, 0xE5EA,   // 0x0110 (272) pixels
+0xE5E9, 0xD58A, 0x1860, 0x30C0, 0xE5E9, 0xEDC5, 0xDD84, 0xBCC7, 0x1000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0120 (288) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0800, 0x6240, 0xE5E9, 0xBCA4, 0xDD86, 0x40A0, 0xE5EA, 0x49A0, 0x1820, 0xB4A6, 0xEDE5, 0xF5E5,   // 0x0130 (304) pixels
+0xBCC6, 0x1000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3100, 0xBD2B,   // 0x0140 (320) pixels
+0xCD6B, 0x72C0, 0x2000, 0xDDCB, 0x6260, 0x1000, 0x6A60, 0xDD44, 0xC4A0, 0xBCC6, 0x1000, 0x0800, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0150 (336) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0800, 0x1000, 0x1000, 0x1800, 0x1800, 0xD5CB, 0x72C0, 0x0800, 0x6261,   // 0x0160 (352) pixels
+0xB483, 0x8B20, 0xBCC6, 0x1800, 0x0800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0170 (368) pixels
+0x0800, 0x1820, 0x1840, 0x1800, 0x1800, 0xDDEC, 0x72C0, 0x0800, 0x5A63, 0xAC87, 0x8320, 0xC528, 0x4120, 0x3920, 0x1860, 0x0800,   // 0x0180 (384) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x3920, 0xD5CD, 0xDDEC, 0xA444, 0x2820, 0xDDEB, 0x6240,   // 0x0190 (400) pixels
+0x0000, 0x4A04, 0x9409, 0x51A0, 0xDDCB, 0xE5EB, 0xE5EB, 0xD5AB, 0x51E0, 0x0800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x01A0 (416) pixels
+0x0000, 0x0800, 0x6220, 0xE5E9, 0x9BA0, 0xDDA7, 0x5140, 0xE5E9, 0x4180, 0x0000, 0x0000, 0x0800, 0x1000, 0x2080, 0x3900, 0x4100,   // 0x01B0 (432) pixels
+0x93A3, 0xD5CC, 0x51E0, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x1000, 0x6A20, 0xE5C8, 0x4940, 0xDDEA, 0xE5EA,   // 0x01C0 (448) pixels
+0xCD49, 0x1840, 0x0000, 0x0000, 0x0000, 0x0000, 0x0800, 0x0800, 0x0800, 0x1000, 0x8B84, 0xDDEC, 0xAC45, 0x9BE3, 0xA404, 0xA404,   // 0x01D0 (464) pixels
+0xA403, 0xA403, 0xA3E3, 0xA3E2, 0xC4E4, 0xD568, 0x1000, 0x20C0, 0x3960, 0x1840, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x01E0 (480) pixels
+0x0000, 0x0000, 0x0000, 0x1000, 0x6260, 0x9BE4, 0xA404, 0xA404, 0xA404, 0xA424, 0xA424, 0xA404, 0xA404, 0xA3E3, 0x51C0, 0x0800,   // 0x01F0 (496) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0800, 0x0800, 0x0800,   // 0x0200 (512) pixels
+0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0210 (528) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0220 (544) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0230 (560) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0240 (576) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0250 (592) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0260 (608) pixels
+0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,   // 0x0270 (624) pixels
+};`;
+    render();
+  });
+</script>
+</body>
+</html>

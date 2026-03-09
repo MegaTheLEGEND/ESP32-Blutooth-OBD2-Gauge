@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Image → RGB565 Converter</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  :root {
+    --bg: #0d0f0d;
+    --panel: #141614;
+    --border: #2a2e2a;
+    --accent: #39ff14;
+    --accent2: #ff4d6d;
+    --text: #e8ece8;
+    --muted: #667266;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    margin-bottom: 36px;
+    letter-spacing: 0.1em;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    width: 100%;
+    max-width: 1100px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  label {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    margin-bottom: 16px;
+  }
+
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(57,255,20,0.04);
+  }
+
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+
+  .drop-label {
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 2;
+    pointer-events: none;
+  }
+
+  .drop-label span { color: var(--accent); }
+
+  canvas { display: none; }
+
+  .preview-img {
+    max-width: 100%;
+    max-height: 200px;
+    image-rendering: pixelated;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    display: none;
+    margin: 0 auto 16px;
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  input[type=number], input[type=text] {
+    background: #0a0c0a;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+
+  input:focus { border-color: var(--accent); }
+
+  .swap-row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+  }
+  .swap-row label { margin: 0; font-size: 0.68rem; color: var(--muted); cursor: pointer; text-transform: none; letter-spacing: 0; }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+  button {
+    width: 100%;
+    padding: 11px;
+    border-radius: 7px;
+    border: none;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: opacity 0.15s, transform 0.1s;
+    background: var(--accent);
+    color: #000;
+  }
+
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    margin-top: 10px;
+  }
+
+  /* Output panel */
+  .out-label-row {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    padding: 4px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    width: auto;
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  textarea {
+    width: 100%;
+    height: 420px;
+    background: #0a0c0a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: #a0ffa8;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    padding: 14px;
+    resize: vertical;
+    outline: none;
+    line-height: 1.7;
+  }
+
+  .stats-row {
+    display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap;
+  }
+
+  .stat {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+  }
+
+  .stat-k { color: var(--muted); }
+  .stat-v { color: var(--accent); font-weight: 700; }
+
+  .error {
+    color: var(--accent2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 10px 14px;
+    background: rgba(255,77,109,0.08);
+    border: 1px solid rgba(255,77,109,0.3);
+    border-radius: 6px;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .img-info {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 12px;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<h1>Image → RGB565</h1>
+<p class="subtitle">// PNG · JPG · BMP → Arduino PROGMEM array</p>
+
+<div class="layout">
+  <!-- Left: input -->
+  <div class="panel">
+    <label>Drop or select an image</label>
+
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*">
+      <div class="drop-label">
+        Drop image here or <span>click to browse</span><br>
+        PNG · JPG · BMP · GIF · WebP
+      </div>
+    </div>
+
+    <img class="preview-img" id="preview">
+    <p class="img-info" id="imgInfo"></p>
+
+    <div class="controls">
+      <div class="field">
+        <label>Array name</label>
+        <input type="text" id="arrName" value="myImage">
+      </div>
+      <div class="field">
+        <label>Pixels per row</label>
+        <input type="number" id="perRow" value="16" min="1" max="256">
+      </div>
+      <div class="field">
+        <label>Resize width (0 = original)</label>
+        <input type="number" id="resizeW" value="0" min="0" max="2048">
+      </div>
+      <div class="field">
+        <label>Resize height (0 = original)</label>
+        <input type="number" id="resizeH" value="0" min="0" max="2048">
+      </div>
+    </div>
+
+    <div class="swap-row">
+      <input type="checkbox" id="swapBytes">
+      <label for="swapBytes">Swap byte order</label>
+      <input type="checkbox" id="addComments" checked>
+      <label for="addComments">Add pixel count comments</label>
+    </div>
+
+    <button id="convertBtn" onclick="convert()" disabled>▶ Convert</button>
+    <div class="error" id="error"></div>
+  </div>
+
+  <!-- Right: output -->
+  <div class="panel">
+    <div class="out-label-row">
+      <label style="margin:0">C Array Output</label>
+      <button class="copy-btn" onclick="copyOutput()">⎘ Copy</button>
+    </div>
+    <textarea id="output" readonly placeholder="// Output will appear here after conversion..."></textarea>
+
+    <div class="stats-row" id="statsRow" style="display:none">
+      <div class="stat"><span class="stat-k">PIXELS </span><span class="stat-v" id="s-px">—</span></div>
+      <div class="stat"><span class="stat-k">SIZE </span><span class="stat-v" id="s-size">—</span></div>
+      <div class="stat"><span class="stat-k">BYTES </span><span class="stat-v" id="s-bytes">—</span></div>
+    </div>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+  let loadedImage = null;
+
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const preview  = document.getElementById('preview');
+  const imgInfo  = document.getElementById('imgInfo');
+  const convertBtn = document.getElementById('convertBtn');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) loadFile(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) loadFile(fileInput.files[0]);
+  });
+
+  function loadFile(file) {
+    if (!file.type.startsWith('image/')) {
+      showError('Please select an image file.'); return;
+    }
+    clearError();
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        loadedImage = img;
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        imgInfo.textContent = `${img.naturalWidth} × ${img.naturalHeight} px`;
+        imgInfo.style.display = 'block';
+        convertBtn.disabled = false;
+        // auto-fill resize if image is larger than typical embedded display
+        if (img.naturalWidth <= 320) {
+          document.getElementById('resizeW').value = 0;
+          document.getElementById('resizeH').value = 0;
+        }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function toRGB565(r, g, b, swap) {
+    const val = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+    if (swap) return ((val & 0xFF) << 8) | ((val >> 8) & 0xFF);
+    return val;
+  }
+
+  function convert() {
+    clearError();
+    if (!loadedImage) { showError('No image loaded.'); return; }
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let w = parseInt(document.getElementById('resizeW').value) || loadedImage.naturalWidth;
+    let h = parseInt(document.getElementById('resizeH').value) || loadedImage.naturalHeight;
+
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(loadedImage, 0, 0, w, h);
+
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const swap = document.getElementById('swapBytes').checked;
+    const addComments = document.getElementById('addComments').checked;
+    const perRow = Math.max(1, parseInt(document.getElementById('perRow').value) || 16);
+    const name = document.getElementById('arrName').value.trim() || 'myImage';
+    const total = w * h;
+
+    const hexVals = [];
+    for (let i = 0; i < total; i++) {
+      const r = data[i * 4];
+      const g = data[i * 4 + 1];
+      const b = data[i * 4 + 2];
+      hexVals.push('0x' + toRGB565(r, g, b, swap).toString(16).toUpperCase().padStart(4, '0'));
+    }
+
+    // Build output
+    let lines = [`static const unsigned short ${name}[${total}] PROGMEM={`];
+    for (let i = 0; i < total; i += perRow) {
+      const chunk = hexVals.slice(i, i + perRow).join(', ');
+      const comment = addComments
+        ? `   // 0x${(i + perRow).toString(16).toUpperCase().padStart(4,'0')} (${i + perRow}) pixels`
+        : '';
+      lines.push(chunk + ',' + comment);
+    }
+    lines.push('};');
+
+  const now = new Date();
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const timeStr = `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} ${String(now.getFullYear()).slice(2)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const fileName = fileInput.files[0] ? fileInput.files[0].name : 'unknown';
+  const bytes = total * 2;
+
+  lines.push('');
+  lines.push(`// Generated by   : MegaTheLEGEND's image converter`);
+  lines.push(`// Generated from : ${fileName}`);
+  lines.push(`// Time generated : ${timeStr}`);
+  lines.push(`// Image Size     : ${w}x${h} pixels`);
+  lines.push(`// Memory usage   : ${bytes} bytes`);
+
+    document.getElementById('output').value = lines.join('\n');
+
+    document.getElementById('s-px').textContent = total;
+    document.getElementById('s-size').textContent = `${w} × ${h}`;
+    document.getElementById('s-bytes').textContent = (total * 2) + ' bytes';
+    document.getElementById('statsRow').style.display = 'flex';
+  }
+
+  function copyOutput() {
+    const ta = document.getElementById('output');
+    if (!ta.value) return;
+    navigator.clipboard.writeText(ta.value).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => btn.textContent = '⎘ Copy', 1500);
+    });
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function clearError() {
+    document.getElementById('error').style.display = 'none';
+  }
+</script>
+</body>
+</html>
