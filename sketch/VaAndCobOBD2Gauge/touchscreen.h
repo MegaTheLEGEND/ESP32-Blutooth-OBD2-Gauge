@@ -252,30 +252,78 @@ uint16_t t_x = 0, t_y = 0; // To store the touch coordinates
   }
 }  
 
-// ============================================================
-// handleTouch - left/right zones change layout page
-// ============================================================
+
+
+
 void handleTouch() {
   static unsigned long lastTouch = 0;
-  const  unsigned long debounce  = 400;  // ms, prevents double-flip
+  const  unsigned long debounce  = 400;
 
   uint16_t tx, ty;
-  if (!getTouch(&tx, &ty)) return;
+  if (!getTouch(&tx, &ty))             return;
   if (millis() - lastTouch < debounce) return;
+
+  // record where finger went down
+  uint16_t startX = tx;
+  uint16_t startY = ty;
+  unsigned long pressStart = millis();
+
+  // track finger movement
+  uint16_t endX = tx;
+  while (ts.touched() && millis() - pressStart < 600) {
+    uint16_t cx, cy;
+    if (getTouch(&cx, &cy)) endX = cx;
+    delay(10);
+  }
+
   lastTouch = millis();
+  int16_t deltaX = (int16_t)endX - (int16_t)startX;
 
-  // divide screen into thirds
-  // left third  = previous page
-  // middle third = ignore
-  // right third  = next page
-  const uint16_t leftZone  = _width / 3;        //   0 - 106
-  const uint16_t rightZone = (_width / 3) * 2;  // 213 - 320
+  // ---- swipe left (finger moves left = previous page) ----
+  if (deltaX < -40) {
+    if (graphActive) { graphExit(); return; }
+    layout = (layout == 0) ? max_layout - 1 : layout - 1;
+    pref.putUShort("layout", layout);
+    initScreen();
+    return;
+  }
 
-  if (tx < leftZone) {
-    layout = (layout == 0) ? 13 : layout - 1;
+  // ---- swipe right (finger moves right = next page) ----
+  if (deltaX > 40) {
+    if (graphActive) { graphExit(); return; }
+    layout = (layout >= max_layout - 1) ? 0 : layout + 1;
+    pref.putUShort("layout", layout);
     initScreen();
-  } else if (tx > rightZone) {
-    layout = (layout == 13) ? 0 : layout + 1;
-    initScreen();
+    return;
+  }
+
+  // ---- tap (minimal movement) = graph or exit ----
+  if (graphActive) {
+    graphExit();
+    return;
+  }
+
+  const LayoutDef &ld = layoutDefs[layout];
+  int8_t tappedSlot   = -1;
+
+  if (ld.grid == GRID_6CELL) {
+    uint8_t col = (startX < 160) ? 0 : 1;
+    uint8_t row = startY / 80;
+    if (row > 2) row = 2;
+    tappedSlot = col * 3 + row;
+  } else if (ld.grid == GRID_MIXED) {
+    if (startX < 160) {
+      tappedSlot = startY / 80;  // slots 0-2
+      if (tappedSlot > 2) tappedSlot = 2;
+    } else {
+      tappedSlot = 3 + (startX - 160) / 80;  // slots 3-4
+    }
+  } else {
+    tappedSlot = startX / 80;
+  }
+
+  if (tappedSlot >= 0 && tappedSlot < ld.cellCount &&
+      ld.cells[tappedSlot].pid != 255) {
+    graphInit(tappedSlot);
   }
 }

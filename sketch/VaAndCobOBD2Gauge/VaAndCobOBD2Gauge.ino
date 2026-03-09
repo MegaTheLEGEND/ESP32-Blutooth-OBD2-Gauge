@@ -20,7 +20,7 @@ About opening logo image and goodbye image.
 //--- FLAG SETTING ----- for debugging
 //#define TERMINAL //temrinal mode (no gauge)
 #define SERIAL_DEBUG //to show data in serial port
-//#define SKIP_CONNECTION //skip elm327 BT connection to view meter
+#define SKIP_CONNECTION //skip elm327 BT connection to view meter
 //#define TEST_DTC //test DTC
 
 //#define FORD_T5   // FOR FORD T5 uncomment this line
@@ -63,9 +63,8 @@ Preferences pref;         //create preference
 TFT_eSPI tft = TFT_eSPI();
 #define TFT_GREY 0x5AEB
 
-// WATCHDOG
-unsigned long lastResponseTime = 0;
-const unsigned long BT_TIMEOUT = 5000;  // 5 seconds
+unsigned long lastResponseTime   = 0;
+const unsigned long BT_TIMEOUT   = 15000;  // was 5000 — 15sec gives full PID cycle room
 
 //ELM327 init https://www.elmelectronics.com/wp-content/uploads/2016/07/ELM327DS.pdf
 const uint8_t elm327InitCount = 8;
@@ -84,17 +83,35 @@ skip = delay reading 0 - 3; 3 = max delay read
 digit = want to show digit or not
 warn = default warning value
 */
-const String pidConfig[7][9] = {
-  { "ENG Load",  "%",    "0104", "2", "0",   "100",  "0", "0", "80"  },
-  { "Coolant",   "`F",   "0105", "1", "40",  "240",  "3", "0", "210" },  // formula 1 = F
-  { "MAP",       "psi",  "010B", "0", "0",   "40",   "0", "1", "35"  },
-  { "ENG SPD",   "rpm",  "010C", "3", "0",   "5500", "0", "0", "4500"},
-  { "PCM Volt",  "volt", "0142", "4", "0",   "16",   "1", "1", "15"  },
-  { "Intake Tmp",       "`F",   "010F", "1", "0",   "150",  "3", "0", "120" },  // formula 1 = F
-  { "Trans Tmp", "`F",   "0105", "1", "40",  "240",  "3", "0", "200" },  // placeholder
+const String pidConfig[20][9] = {
+//  Label         unit     pid    fmt  min     max   skip digit warn
+  { "ENG Load",   "%",    "0104", "2", "0",   "100",  "0", "0", "80"   }, // 0
+  { "Coolant",    "`F",   "0105", "1", "40",  "240",  "3", "0", "210"  }, // 1
+  { "MAP",        "psi",  "010B", "0", "0",   "40",   "0", "1", "35"   }, // 2
+  { "ENG SPD",    "rpm",  "010C", "3", "0",   "5500", "0", "0", "4500" }, // 3
+  { "PCM Volt",   "volt", "0142", "4", "0",   "16",   "1", "1", "15"   }, // 4
+  { "Intake Tmp", "`F",   "010F", "1", "0",   "150",  "3", "0", "120"  }, // 5
+  { "Trans Tmp",  "`F",   "0105", "1", "40",  "240",  "3", "0", "200"  }, // 6  placeholder
+  { "Throttle",   "%",    "0111", "2", "0",   "100",  "0", "0", "90"   }, // 7
+  { "VSS",        "mph",  "010D", "0", "0",   "120",  "0", "0", "110"  }, // 8  formula 0 = raw byte = km/h, ~same scale
+  { "Short Fuel", "%",    "0106", "7", "-25", "25",   "1", "1", "20"   }, // 9  short term fuel trim B1
+  { "Long Fuel",  "%",    "0107", "7", "-25", "25",   "1", "1", "20"   }, // 10 long term fuel trim B1
+  { "MAF",        "g/s",  "010C", "8", "0",   "300",  "0", "1", "250"  }, // 11 MAF air flow - formula 8
+  { "O2 B1S1",    "v",    "0114", "9", "0",   "1",    "2", "2", "0"    }, // 12 O2 sensor bank1 sensor1
+  { "O2 B1S2",    "v",    "0115", "9", "0",   "1",    "2", "2", "0"    }, // 13 O2 sensor bank1 sensor2
+  { "Timing",     "deg",  "010E", "10","0",   "60",   "1", "1", "55"   }, // 14 ignition timing
+  { "Baro",       "psi",  "0133", "0", "10",  "17",   "3", "1", "16"   }, // 15 barometric pressure
+  { "EGR Err",    "%",    "012D", "7", "-25", "25",   "3", "1", "20"   }, // 16 EGR error
+  { "Fuel Lvl",   "%",    "012F", "2", "0",   "100",  "3", "0", "10"   }, // 17 fuel level
+  { "Abs Load",   "%",    "0143", "4", "0",   "100",  "1", "0", "90"   }, // 18 absolute load - reuses formula 4 scaled
+  { "Rel Throt",  "%",    "0145", "2", "0",   "100",  "0", "0", "90"   }, // 19 relative throttle
 };
 
-String warningValue[7] = { "80", "210", "35", "4500", "15", "120", "200" };
+String warningValue[20] = {
+  "80", "210", "35", "4500", "15", "120", "200",
+  "90", "110", "20", "20", "250", "0", "0",
+  "55", "16",  "20", "10",  "90", "90"
+};
 /*  User configuration here to change display 
       layout 0      layout 1       layout 2     layout 3      layout 4     layout 5
     █ 1 █ █ 7 █   █ 1 █  █  █    █  █ 4 █  █   █  █  █ 7 █   █  █  █  █   █  █  █  █
@@ -110,26 +127,9 @@ set up meter here which pid to use on each cell
 5 - oil Temp
 6 - trans Temp
 */
-const uint8_t pidInCell[14][7] = {
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 0  - arc left, numeric right
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 1  - all arc
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 2  - all numeric
-  { 1, 5, 6, 3, 2, 4, 4 },  // layout 3  - numeric + vbar
-  { 2, 1, 5, 6, 4, 0, 4 },  // layout 4  - vbar outer, numeric inner
-  { 2, 0, 1, 5, 6, 4, 4 },  // layout 5  - vbar left, numeric right
-  { 1, 5, 6, 4, 0, 3, 4 },  // layout 6  - all vbar
-  { 3, 2, 0, 4, 1, 5, 4 },  // layout 7  - all vbar alt
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 8  - needle left, numeric right
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 9  - all 7seg
-  { 1, 5, 6, 3, 2, 4, 4 },  // layout 10 - all segbar
-  { 1, 5, 6, 3, 2, 4, 4 },  // layout 11 - C4 red LED (4 bars: coolant/iat/trans/map)
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 12 - DeLorean VFD (6 cells)
-  { 0, 2, 3, 1, 5, 6, 4 },  // layout 13 - Amber dot matrix (6 cells)
-};
-/*---------------------------*/
 //if NO DATA value will set to 0 to skip reading
 uint8_t layout = 0;                                   //pidInCelltype 0-4 EEPROM 0x00
-const uint8_t max_layout = array_length(pidInCell);   //total 5 type of display page
+
 uint8_t pidIndex = 0;                                 //point to PID List
 const uint8_t maxpidIndex = array_length(pidConfig);  //total 7 pids in picConfig
 bool prompt = false;                                  //bt elm ready flag
@@ -175,7 +175,7 @@ BluetoothSerial BTSerial;  //bluetooth serial device
 
 //---- Include Header File ---
 #include "image.h"
-#include "touchscreen.h"
+
 
 /*----------- global function ---------*/
 
@@ -263,9 +263,10 @@ void checkGenuine() {                          //check if genuine obd2 gauge - m
 //----------------------------------------------
 
 //---- Include Header File --------------------
-//#include "image.h"
 #include "bluetooth.h"
+#include "layouts.h"
 #include "meter.h"
+#include "touchscreen.h"
 #include "config.h"
 
 //----SET UP -----------------------------------
@@ -421,6 +422,7 @@ recent_client_addr : {0x00,0x00,0x00,0x00,0x00,0x00} array of bytes[6]
   initScreen();
   beepbeep();
   prompt = true;
+  lastResponseTime = millis();
   //----------------------
 }  //setup
 
@@ -429,6 +431,7 @@ void loop() {
 
   autoDim();
   handleTouch();
+
 
   //SCAN BUTON (button press HOLD to config menu)
   if (digitalRead(SELECTOR_PIN) == LOW) {  //button pressed
@@ -445,6 +448,7 @@ void loop() {
     if (press) {                              //change layout next page
       layout++;                               //change to next layout page
       if (layout == max_layout) layout = 0;
+      pref.putUShort("layout", layout);
       ledcWriteTone(buzzerChannel, 5000);  //play click sound
       delay(5);
       ledcWriteTone(buzzerChannel, 0);
@@ -461,6 +465,7 @@ void loop() {
       pidIndex = maxpidIndex - 1;  //will be +1 to be 0
       press = false;               //reset flag
       prompt = true;               //to trig reading elm again
+      lastResponseTime = millis();
       delay(200);                  //delay avoid bounce
 
     }  //if press
@@ -469,31 +474,33 @@ void loop() {
      //----------------------
 
 #ifndef SKIP_CONNECTION
-// --- WATCHDOG BLOCK ---
-  if (millis() - lastResponseTime > BT_TIMEOUT && foundOBD2) {
-    Serial.println("BT timeout - reconnecting...");
+  // --- WATCHDOG BLOCK ---
+  // only start counting after first successful connection
+  if (foundOBD2 && lastResponseTime > 0 &&
+      millis() - lastResponseTime > BT_TIMEOUT) {
+    #ifdef SERIAL_DEBUG
+    Serial.println("BT watchdog timeout - reconnecting...");
+    #endif
     tft.fillScreen(TFT_BLACK);
     Terminal("Connection lost! Reconnecting...", 0, 48, 320, 191);
     digitalWrite(LED_GREEN_PIN, HIGH);  // green off
-    digitalWrite(LED_RED_PIN, LOW);     // red on - lost connection
-    foundOBD2 = false;
-    prompt = false;
-    bt_message = "";
+    digitalWrite(LED_RED_PIN,   LOW);   // red on
+    foundOBD2    = false;
+    prompt       = false;
+    bt_message   = "";
     BTSerial.disconnect();
-    delay(1000);
+    delay(2000);  // give adapter time to fully drop
     connectLastOBDII();
     if (!foundOBD2) scanBTdevice();
     if (foundOBD2) {
+      lastResponseTime = millis();
       initScreen();
-      lastResponseTime = millis();  // reset watchdog
-      digitalWrite(LED_RED_PIN, HIGH);   // red off
-      digitalWrite(LED_GREEN_PIN, LOW);  // green on - reconnected
+      digitalWrite(LED_RED_PIN,   HIGH);  // red off
+      digitalWrite(LED_GREEN_PIN, LOW);   // green on
     }
   }
   // --- END WATCHDOG BLOCK ---
 #endif
-
-
 
 
      //BLUETOOTH read
@@ -509,6 +516,7 @@ void loop() {
       Terminal(bt_message + "->" + String(A) + "," + String(B), 0, 48, 320, 191);
 #endif
       prompt = true;  //pid response ready to calculate & display
+      lastResponseTime = millis();  // reset watchdog
     } else {
       bt_message.concat(incomingChar);  //keep elm327 respond
     }
@@ -562,6 +570,7 @@ void loop() {
     } else {                                                    //skip sending request
       pidCurrentSkip[pidIndex] = pidCurrentSkip[pidIndex] - 1;  //decrese loop count
       prompt = true;
+      lastResponseTime = millis();
       skip = true;
     }  //else
 

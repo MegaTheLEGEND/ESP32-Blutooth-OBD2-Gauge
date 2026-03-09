@@ -9,7 +9,7 @@
 #include <WiFi.h>   //wifi
 #include <WebServer.h>
 
-const char* ssid = "Va&Cob OBD2 Gauge";
+const char* ssid = "OBD2 Gauge";
 const char* password = "12345678";//default password
 IPAddress local_IP(192, 168, 4,1);
 IPAddress gateway(192, 168, 4, 1);

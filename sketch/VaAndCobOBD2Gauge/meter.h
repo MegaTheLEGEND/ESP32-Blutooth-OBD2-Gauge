@@ -35,6 +35,16 @@
 #define DOT_BEZEL       0x3200  // dark amber bezel
 #define DOT_GOLD        0xFEA0  // gold accent lines
 
+
+// graph globals - must be before updateMeter
+float    graphBuffer[318] = {};
+uint16_t graphHead        = 0;
+bool     graphActive      = false;
+uint8_t  graphPid         = 0;
+
+void initScreen();  // forward declaration
+void graphUpdate(uint8_t pid, float newData);  // ← add this line
+
 // ============================================================
 // SCREEN AND CELL GEOMETRY
 // ============================================================
@@ -75,6 +85,133 @@ float ecu_off_volt        = factoryECUOff;
 // MATH
 // ============================================================
 #include <math.h>
+
+
+
+
+// graph defines
+#define GRAPH_POINTS  318
+#define GRAPH_BG      0x0000
+#define GRAPH_LINE    0x07E0
+#define GRAPH_WARN    0xF800
+#define GRAPH_GRID    0x1082
+#define GRAPH_LABEL   0xFFFF
+
+
+
+
+void graphInit(uint8_t pid) {
+  graphPid    = pid;
+  graphActive = true;
+  graphHead   = 0;
+  float seed  = old_data[pid];
+  for (int i = 0; i < GRAPH_POINTS; i++) graphBuffer[i] = seed;
+
+  uint8_t pidIdx = layoutDefs[layout].cells[pid].pid;
+  String  label  = pidConfig[pidIdx][0];
+  String  unit   = pidConfig[pidIdx][1];
+  int     mn     = pidConfig[pidIdx][4].toInt();
+  int     mx     = pidConfig[pidIdx][5].toInt();
+  int     warnVal = warningValue[pidIdx].toInt();
+
+  tft.fillScreen(GRAPH_BG);
+
+  // header bar
+  tft.fillRect(0, 0, 320, 18, 0x1082);
+  tft.setTextColor(GRAPH_LABEL, 0x1082);
+  tft.drawCentreString(label + "  [" + String(mn) + " - " + String(mx) + " " + unit + "]", 160, 2, 2);
+
+  // tap to exit hint
+  tft.setTextColor(0x4208, GRAPH_BG);
+  tft.drawRightString("tap to exit", 318, 228, 1);
+
+  // horizontal grid lines
+  for (int i = 1; i < 4; i++) {
+    int gy = 19 + (205 * i / 4);
+    tft.drawFastHLine(0, gy, 320, GRAPH_GRID);
+    int labelVal = mx - ((mx - mn) * i / 4);
+    tft.setTextColor(0x4208, GRAPH_BG);
+    tft.drawString(String(labelVal), 2, gy - 7, 1);
+  }
+
+  // min/max labels
+  tft.setTextColor(0x4208, GRAPH_BG);
+  tft.drawString(String(mx), 2, 20,  1);
+  tft.drawString(String(mn), 2, 216, 1);
+
+  // warn line
+  int warnY = map(warnVal, mn, mx, 224, 19);
+  warnY     = constrain(warnY, 19, 224);
+  tft.drawFastHLine(0, warnY, 320, 0xFC00);
+  tft.setTextColor(0xFC00, GRAPH_BG);
+  tft.drawRightString("W", 318, warnY - 6, 1);
+}
+
+void graphUpdate(uint8_t pid, float newData) {
+  if (!graphActive || pid != graphPid) return;
+
+  uint8_t pidIdx  = layoutDefs[layout].cells[pid].pid;
+  int     mn      = pidConfig[pidIdx][4].toInt();
+  int     mx      = pidConfig[pidIdx][5].toInt();
+  int     warnVal = warningValue[pidIdx].toInt();
+  bool    digit   = pidConfig[pidIdx][7].toInt();
+
+  // store new sample
+  graphBuffer[graphHead] = newData;
+  graphHead = (graphHead + 1) % GRAPH_POINTS;
+
+  // redraw all points
+  for (int x = 0; x < GRAPH_POINTS; x++) {
+    int   idx = (graphHead + x) % GRAPH_POINTS;
+    float val = graphBuffer[idx];
+    int   y   = map((int)val, mn, mx, 224, 19);
+    y         = constrain(y, 19, 224);
+
+    // erase column
+    tft.drawFastVLine(x, 19, 206, GRAPH_BG);
+
+    // redraw grid dots
+    for (int i = 1; i < 4; i++) {
+      int gy = 19 + (205 * i / 4);
+      tft.drawPixel(x, gy, GRAPH_GRID);
+    }
+
+    // draw point
+    uint16_t dotColor = (val >= warnVal) ? GRAPH_WARN : GRAPH_LINE;
+    tft.drawPixel(x, y, dotColor);
+
+    // connect to previous point
+    if (x > 0) {
+      int   prevIdx  = (graphHead + x - 1) % GRAPH_POINTS;
+      float prevVal  = graphBuffer[prevIdx];
+      int   prevY    = map((int)prevVal, mn, mx, 224, 19);
+      prevY          = constrain(prevY, 19, 224);
+      uint16_t lineColor = (val >= warnVal || prevVal >= warnVal) ? GRAPH_WARN : GRAPH_LINE;
+      tft.drawLine(x - 1, prevY, x, y, lineColor);
+    }
+  }
+
+  // redraw warn line on top
+  int warnY = map(warnVal, mn, mx, 224, 19);
+  warnY     = constrain(warnY, 19, 224);
+  tft.drawFastHLine(0, warnY, 320, 0xFC00);
+
+  // current value in header
+  tft.fillRect(220, 0, 100, 18, 0x1082);
+  uint16_t valColor = (newData >= warnVal) ? GRAPH_WARN : GRAPH_LABEL;
+  tft.setTextColor(valColor, 0x1082);
+  String result = String(newData, digit);
+  tft.drawRightString(result.c_str(), 318, 2, 2);
+}
+
+void graphExit() {
+  graphActive = false;
+  initScreen();
+}
+
+
+
+
 
 // ============================================================
 // SHARED HELPER - horizontal LED bar
@@ -495,9 +632,6 @@ void plotSegBar(uint8_t cell, float data, int warn, int min, int max, bool digit
   }
 }
 
-// ============================================================
-// GAUGE TYPE 6: SWEEPING NEEDLE METER  160x80
-// ============================================================
 void needleMeter(uint8_t cell, uint8_t pid) {
   int    w       = screenWidth / 2;
   int    h       = screenHeight / 3;
@@ -509,7 +643,7 @@ void needleMeter(uint8_t cell, uint8_t pid) {
   int    maxVal  = pidConfig[pid][5].toInt();
   int    warnVal = pidConfig[pid][8].toInt();
   int    cx      = x + w / 2;
-  int    cy      = y + h + 10;
+  int    cy      = y + h + 18;  // pivot below cell so arc sweeps up into view
 
   tft.fillRect(x, y, w, h, 0x1082);
   tft.fillRect(x + 3, y + 3, w - 6, h - 6, TFT_BLACK);
@@ -522,30 +656,32 @@ void needleMeter(uint8_t cell, uint8_t pid) {
   tft.drawFastHLine(x + 4, y + 27, w - 8, 0x2104);
 
   int warnAngle = map(warnVal, minVal, maxVal, 135, 225);
+
   for (int i = 0; i <= 18; i++) {
     float    adeg  = 135.0 + i * 5.0;
     float    arad  = adeg * 3.14159 / 180.0;
     bool     major = (i % 3 == 0);
-    int      ro    = major ? 68 : 66;
-    int      ri    = major ? 56 : 61;
+    int      ro    = major ? 60 : 58;
+    int      ri    = major ? 48 : 53;
     float    tv    = minVal + (maxVal - minVal) * i / 18.0;
     uint16_t tc    = (tv >= warnVal) ? 0xF800 : TFT_WHITE;
     tft.drawLine(cx + ro * cos(arad), cy + ro * sin(arad),
                  cx + ri * cos(arad), cy + ri * sin(arad), tc);
     if (major) {
-      int lx = cx + 46 * cos(arad);
-      int ly = cy + 46 * sin(arad);
+      int lx = cx + 38 * cos(arad);
+      int ly = cy + 38 * sin(arad);
       if (ly > y + 28 && ly < y + h - 2) {
         tft.setTextColor(tc, TFT_BLACK);
         tft.drawCentreString(String((int)tv), lx, ly - 4, 1);
       }
     }
   }
-  tft.drawSmoothArc(cx, cy, 70, 64, warnAngle, 226, 0xF800, TFT_BLACK, false);
+
+  tft.drawSmoothArc(cx, cy, 62, 56, warnAngle, 226, 0xF800, TFT_BLACK, false);
   tft.fillCircle(cx, cy, 6, 0x4208);
   tft.fillCircle(cx, cy, 4, TFT_WHITE);
   tft.fillCircle(cx, cy, 2, 0x4208);
-  drawNeedle(cx, cy, 135, 62, TFT_WHITE);
+  drawNeedle(cx, cy, 135, 54, TFT_WHITE);
 }
 
 void plotNeedle(uint8_t cell, String label, float data, int warn,
@@ -556,27 +692,27 @@ void plotNeedle(uint8_t cell, String label, float data, int warn,
     int x  = cell1_x[cell - 1];
     int y  = cell1_y[cell - 1];
     int cx = x + w / 2;
-    int cy = y + h + 10;
+    int cy = y + h + 45;  // must match needleMeter
     if (data < min) data = min;
     if (data > max) data = max;
 
     int oldAngle = map((int)old_data[pidIndex], min, max, 135, 225);
-    drawNeedle(cx, cy, oldAngle, 62, TFT_BLACK);
+    drawNeedle(cx, cy, oldAngle, 54, TFT_BLACK);
 
     for (int i = 0; i <= 18; i++) {
       float adeg = 135.0 + i * 5.0;
       if (abs(adeg - oldAngle) < 8) {
         float    arad  = adeg * 3.14159 / 180.0;
         bool     major = (i % 3 == 0);
-        int      ro    = major ? 68 : 66;
-        int      ri    = major ? 56 : 61;
+        int      ro    = major ? 60 : 58;
+        int      ri    = major ? 48 : 53;
         float    tv    = min + (max - min) * i / 18.0;
         uint16_t tc    = (tv >= warn) ? 0xF800 : TFT_WHITE;
         tft.drawLine(cx + ro * cos(arad), cy + ro * sin(arad),
                      cx + ri * cos(arad), cy + ri * sin(arad), tc);
         if (major) {
-          int lx = cx + 46 * cos(arad);
-          int ly = cy + 46 * sin(arad);
+          int lx = cx + 38 * cos(arad);
+          int ly = cy + 38 * sin(arad);
           if (ly > y + 28 && ly < y + h - 2) {
             tft.setTextColor(tc, TFT_BLACK);
             tft.drawCentreString(String((int)tv), lx, ly - 4, 1);
@@ -584,9 +720,10 @@ void plotNeedle(uint8_t cell, String label, float data, int warn,
         }
       }
     }
-    int      newAngle   = map((int)data, min, max, 135, 225);
+
+    int      newAngle    = map((int)data, min, max, 135, 225);
     uint16_t needleColor = (data >= warn) ? 0xF800 : TFT_WHITE;
-    drawNeedle(cx, cy, newAngle, 62, needleColor);
+    drawNeedle(cx, cy, newAngle, 54, needleColor);
     tft.fillCircle(cx, cy, 6, 0x4208);
     tft.fillCircle(cx, cy, 4, TFT_WHITE);
     tft.fillCircle(cx, cy, 2, 0x4208);
@@ -600,7 +737,6 @@ void plotNeedle(uint8_t cell, String label, float data, int warn,
     old_data[pidIndex] = data;
   }
 }
-
 // ============================================================
 // GAUGE TYPE 7: CORVETTE C4 RED LED BAR  80x240
 // ============================================================
@@ -826,141 +962,106 @@ void plotDot(uint8_t cell, String label, float data,
   }
 }
 
+
+
+
+
+
 // ============================================================
-// initScreen - draw static frame for current layout
+// CELL ADDRESS HELPERS
+// ============================================================
+void getCellAddress(uint8_t grid, uint8_t slot, int &x, int &y, int &w, int &h) {
+  if (grid == GRID_6CELL) {
+    uint8_t col = slot / 3;
+    uint8_t row = slot % 3;
+    x = col * 160;  y = row * 80;  w = 160;  h = 80;
+  } else if (grid == GRID_MIXED) {
+    if (slot < 3) {
+      // left 160px numeric column
+      x = 0;  y = slot * 80;  w = 160;  h = 80;
+    } else {
+      // right two 80px vbar columns
+      x = 160 + (slot - 3) * 80;  y = 0;  w = 80;  h = 240;
+    }
+  } else {
+    x = slot * 80;  y = 0;  w = 80;  h = 240;
+  }
+}
+// get the cell number (1-9) that the TFT draw functions expect
+uint8_t getCellNum(uint8_t grid, uint8_t slot) {
+  if (grid == GRID_6CELL) {
+    const uint8_t cellMap[6] = {1, 2, 3, 7, 8, 9};
+    return cellMap[slot];
+  } else if (grid == GRID_MIXED) {
+    // slot 0-2 = left 160px col (cells 1,2,3), slot 3-4 = right vbar cols (cells 3,4)
+    const uint8_t cellMap[5] = {1, 2, 3, 3, 4};
+    return cellMap[slot];
+  } else {
+    return slot + 1;
+  }
+}
+
+
+// ============================================================
+// UNIFIED initScreen
 // ============================================================
 void initScreen() {
   #ifdef SERIAL_DEBUG
-  Serial.printf("Display layout -> %d\n", layout);
+  Serial.printf("Layout -> %d (%s)\n", layout, layoutDefs[layout].name);
   #endif
 
-  for (int i = 0; i < 7; i++) {
-    pidList[i]        = pidConfig[pidInCell[layout][i]][2];
-    pidReadSkip[i]    = pidConfig[pidInCell[layout][i]][6].toInt();
-    pidCurrentSkip[i] = pidReadSkip[i];
-    old_data[i]       = 0;
+  const LayoutDef &ld = layoutDefs[layout];
+
+  // rebuild pid lists from layout descriptor
+  // slot 0..cellCount-1 = active cells
+  // enginePid fills remaining slots up to maxpidIndex
+  uint8_t slotsFilled = 0;
+  for (uint8_t i = 0; i < ld.cellCount; i++) {
+    if (ld.cells[i].pid == 255) continue;  // empty slot
+    pidList[slotsFilled]        = pidConfig[ld.cells[i].pid][2];
+    pidReadSkip[slotsFilled]    = pidConfig[ld.cells[i].pid][6].toInt();
+    pidCurrentSkip[slotsFilled] = pidReadSkip[slotsFilled];
+    slotsFilled++;
   }
+  // fill remaining with engine pid (0142) for engine_onoff
+  for (uint8_t i = slotsFilled; i < maxpidIndex; i++) {
+    pidList[i]        = pidConfig[ld.enginePid][2];
+    pidReadSkip[i]    = 0;
+    pidCurrentSkip[i] = 0;
+  }
+  for (uint8_t i = 0; i < maxpidIndex; i++) old_data[i] = 0;
+
   tft.fillScreen(TFT_BLACK);
 
-  switch (layout) {
+  // draw each cell
+  for (uint8_t slot = 0; slot < ld.cellCount; slot++) {
+    if (ld.cells[slot].pid == 255) continue;
+    uint8_t cellNum = getCellNum(ld.grid, slot);
+    uint8_t pid     = ld.cells[slot].pid;
+    uint8_t gt      = ld.cells[slot].gaugeType;
+    switch (gt) {
+      case GT_ARC:     arcMeter(cellNum,    pid); break;
+      case GT_NUMERIC: numericMeter(cellNum, pid); break;
+      case GT_VBAR:    vBarMeter(cellNum,   pid); break;
+      case GT_SEG7:    seg7Meter(cellNum,   pid); break;
+      case GT_SEGBAR:  segBarMeter(cellNum, pid); break;
+      case GT_NEEDLE:  needleMeter(cellNum, pid); break;
+      case GT_C4BAR:   c4BarMeter(cellNum,  pid); break;
+      case GT_VFD:     vfdMeter(cellNum,    pid); break;
+      case GT_DOT:     dotMeter(cellNum,    pid); break;
+    }
+  }
+  if (showsystem) {
+    // show layout name briefly in top-right corner
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.drawRightString(layoutDefs[layout].name, 318, 2, 1);
+  }
+}
 
-    case 0:  // arc left, numeric right
-      arcMeter(1, pidInCell[0][0]);
-      arcMeter(2, pidInCell[0][1]);
-      arcMeter(3, pidInCell[0][2]);
-      numericMeter(7, pidInCell[0][3]);
-      numericMeter(8, pidInCell[0][4]);
-      numericMeter(9, pidInCell[0][5]);
-      break;
 
-    case 1:  // all arc
-      arcMeter(1, pidInCell[1][0]);
-      arcMeter(2, pidInCell[1][1]);
-      arcMeter(3, pidInCell[1][2]);
-      arcMeter(7, pidInCell[1][3]);
-      arcMeter(8, pidInCell[1][4]);
-      arcMeter(9, pidInCell[1][5]);
-      break;
 
-    case 2:  // all numeric
-      numericMeter(1, pidInCell[2][0]);
-      numericMeter(2, pidInCell[2][1]);
-      numericMeter(3, pidInCell[2][2]);
-      numericMeter(7, pidInCell[2][3]);
-      numericMeter(8, pidInCell[2][4]);
-      numericMeter(9, pidInCell[2][5]);
-      break;
 
-    case 3:  // numeric left, vbar right
-      numericMeter(1, pidInCell[3][0]);
-      numericMeter(2, pidInCell[3][1]);
-      numericMeter(3, pidInCell[3][2]);
-      vBarMeter(3, pidInCell[3][3]);
-      vBarMeter(4, pidInCell[3][4]);
-      break;
 
-    case 4:  // vbar outer, numeric inner
-      vBarMeter(1, pidInCell[4][0]);
-      numericMeter(4, pidInCell[4][1]);
-      numericMeter(5, pidInCell[4][2]);
-      numericMeter(6, pidInCell[4][3]);
-      vBarMeter(4, pidInCell[4][4]);
-      break;
-
-    case 5:  // vbar left, numeric right
-      vBarMeter(1, pidInCell[5][0]);
-      vBarMeter(2, pidInCell[5][1]);
-      numericMeter(7, pidInCell[5][2]);
-      numericMeter(8, pidInCell[5][3]);
-      numericMeter(9, pidInCell[5][4]);
-      break;
-
-    case 6:  // all vbar 4 col
-      vBarMeter(1, pidInCell[6][0]);
-      vBarMeter(2, pidInCell[6][1]);
-      vBarMeter(3, pidInCell[6][2]);
-      vBarMeter(4, pidInCell[6][3]);
-      break;
-
-    case 7:  // all vbar 4 col alt pids
-      vBarMeter(1, pidInCell[7][0]);
-      vBarMeter(2, pidInCell[7][1]);
-      vBarMeter(3, pidInCell[7][2]);
-      vBarMeter(4, pidInCell[7][3]);
-      break;
-
-    case 8:  // needle left, numeric right
-      needleMeter(1, pidInCell[8][0]);
-      needleMeter(2, pidInCell[8][1]);
-      needleMeter(3, pidInCell[8][2]);
-      numericMeter(7, pidInCell[8][3]);
-      numericMeter(8, pidInCell[8][4]);
-      numericMeter(9, pidInCell[8][5]);
-      break;
-
-    case 9:  // all 7seg
-      seg7Meter(1, pidInCell[9][0]);
-      seg7Meter(2, pidInCell[9][1]);
-      seg7Meter(3, pidInCell[9][2]);
-      seg7Meter(7, pidInCell[9][3]);
-      seg7Meter(8, pidInCell[9][4]);
-      seg7Meter(9, pidInCell[9][5]);
-      break;
-
-    case 10:  // all segbar
-      segBarMeter(1, pidInCell[10][0]);
-      segBarMeter(2, pidInCell[10][1]);
-      segBarMeter(3, pidInCell[10][2]);
-      segBarMeter(4, pidInCell[10][3]);
-      break;
-
-    case 11:  // C4 Corvette red LED bars
-      c4BarMeter(1, pidInCell[11][0]);
-      c4BarMeter(2, pidInCell[11][1]);
-      c4BarMeter(3, pidInCell[11][2]);
-      c4BarMeter(4, pidInCell[11][3]);
-      break;
-
-    case 12:  // DeLorean VFD
-      vfdMeter(1, pidInCell[12][0]);
-      vfdMeter(2, pidInCell[12][1]);
-      vfdMeter(3, pidInCell[12][2]);
-      vfdMeter(7, pidInCell[12][3]);
-      vfdMeter(8, pidInCell[12][4]);
-      vfdMeter(9, pidInCell[12][5]);
-      break;
-
-    case 13:  // Amber dot matrix
-      dotMeter(1, pidInCell[13][0]);
-      dotMeter(2, pidInCell[13][1]);
-      dotMeter(3, pidInCell[13][2]);
-      dotMeter(7, pidInCell[13][3]);
-      dotMeter(8, pidInCell[13][4]);
-      dotMeter(9, pidInCell[13][5]);
-      break;
-
-  }  // switch layout
-}  // initScreen
 
 // ============================================================
 // getAB - parse ELM327 response into bytes A and B
@@ -1016,206 +1117,82 @@ void engine_onoff(float data, uint8_t pid) {
 }
 
 // ============================================================
-// updateMeter - calculate value and route to correct plot fn
+// UNIFIED updateMeter
 // ============================================================
 void updateMeter(uint8_t pidNo, String response) {
-  String  label   = pidConfig[pidInCell[layout][pidNo]][0];
-  uint8_t formula = pidConfig[pidInCell[layout][pidNo]][3].toInt();
-  int     mn      = pidConfig[pidInCell[layout][pidNo]][4].toInt();
-  int     mx      = pidConfig[pidInCell[layout][pidNo]][5].toInt();
-  bool    digit   = pidConfig[pidInCell[layout][pidNo]][7].toInt();
-  int     warn    = warningValue[pidInCell[layout][pidNo]].toInt();
+  const LayoutDef &ld = layoutDefs[layout];
+
+  // graph mode intercept
+  if (graphActive && pidNo == graphPid) {
+    uint8_t  formula = pidConfig[ld.cells[pidNo].pid][3].toInt();
+    getAB(response);
+    float data = 0.0;
+    switch (formula) {
+      case 0: data = A * 0.145; break;
+      case 1: data = (A - 40) * 9.0 / 5.0 + 32; break;
+      case 2: data = A * 100.0 / 255; break;
+      case 3: data = (256 * A + B) / 4.0; break;
+      case 4: data = (256 * A + B) / 1000.0; break;
+      case 5: data = (256*A+B)/16.0; if (data>150||data<0) data=old_data[pidIndex]; break;
+      case 6: data = (A*256+B)*5/72-18; if (data>150||data<0) data=old_data[pidIndex]; break;
+    }
+    graphUpdate(pidNo, data);
+    bt_message = "";
+    return;
+  }
+
+  // bounds check - if pidNo is beyond active cells it's an engine_onoff slot
+  if (pidNo >= ld.cellCount || ld.cells[pidNo].pid == 255) {
+    getAB(response);
+    float data = (256 * A + B) / 1000.0;  // voltage formula
+    engine_onoff(data, pidNo);
+    bt_message = "";
+    return;
+  }
+
+  uint8_t  pid     = ld.cells[pidNo].pid;
+  uint8_t  gt      = ld.cells[pidNo].gaugeType;
+  String   label   = pidConfig[pid][0];
+  uint8_t  formula = pidConfig[pid][3].toInt();
+  int      mn      = pidConfig[pid][4].toInt();
+  int      mx      = pidConfig[pid][5].toInt();
+  bool     digit   = pidConfig[pid][7].toInt();
+  int      warn    = warningValue[pid].toInt();
+  uint8_t  cellNum = getCellNum(ld.grid, pidNo);
 
   getAB(response);
   float data = 0.0;
-  switch (formula) {
-    case 0: data = A * 0.145; break;                          // MAP psi
-    case 1: data = (A - 40) * 9.0 / 5.0 + 32; break;         // temp F
-    case 2: data = A * 100.0 / 255; break;                    // load %
-    case 3: data = (256 * A + B) / 4.0; break;                // RPM
-    case 4: data = (256 * A + B) / 1000.0; break;             // voltage
-    case 5:                                                    // trans temp
-      data = (256 * A + B) / 16.0;
-      if (data > 150 || data < 0) data = old_data[pidIndex];
-      break;
-    case 6:                                                    // Ford T5 (unused on Ram)
-      data = (A * 256 + B) * 5 / 72 - 18;
-      if (data > 150 || data < 0) data = old_data[pidIndex];
-      break;
+ switch (formula) {
+  case 0:  data = A * 0.145; break;                                        // raw byte to psi (MAP/baro)
+  case 1:  data = (A - 40) * 9.0 / 5.0 + 32; break;                       // celsius offset to fahrenheit
+  case 2:  data = A * 100.0 / 255; break;                                  // byte to percentage
+  case 3:  data = (256 * A + B) / 4.0; break;                              // two-byte RPM
+  case 4:  data = (256 * A + B) / 1000.0; break;                           // two-byte voltage or scaled load
+  case 5:  data = (256*A+B)/16.0; if (data>150||data<0) data=old_data[pidIndex]; break;  // two-byte temp with bounds
+  case 6:  data = (A*256+B)*5/72-18; if (data>150||data<0) data=old_data[pidIndex]; break; // Ford-specific (unused)
+  case 7:  data = (A / 1.28) - 100; break;                                 // signed fuel trim percent
+  case 8:  data = (256 * A + B) / 100.0; break;                            // MAF grams/sec
+  case 9:  data = A / 200.0; break;                                        // O2 sensor voltage (0-1.275v)
+  case 10: data = (A / 2.0) - 64; break;                                   // ignition timing degrees BTDC
+}
+
+  switch (gt) {
+    case GT_ARC:     plotArc(cellNum, label, data, warn, mn, mx, digit); break;
+    case GT_NUMERIC: plotNumeric(cellNum, data, warn, digit); break;
+    case GT_VBAR:    plotVBar(cellNum, data, warn, mn, mx, digit); break;
+    case GT_SEG7:    plotSeg7(cellNum, data, warn, digit); break;
+    case GT_SEGBAR:  plotSegBar(cellNum, data, warn, mn, mx, digit); break;
+    case GT_NEEDLE:  plotNeedle(cellNum, label, data, warn, mn, mx, digit); break;
+    case GT_C4BAR:   plotC4Bar(cellNum, data, warn, mn, mx, digit); break;
+    case GT_VFD:     plotVFD(cellNum, label, data, warn, mn, mx, digit); break;
+    case GT_DOT:     plotDot(cellNum, label, data, warn, mn, mx, digit); break;
   }
 
-  switch (layout) {
-    case 0:
-      switch (pidNo) {
-        case 0: plotArc(1, label, data, warn, mn, mx, digit); break;
-        case 1: plotArc(2, label, data, warn, mn, mx, digit); break;
-        case 2: plotArc(3, label, data, warn, mn, mx, digit); break;
-        case 3: plotNumeric(7, data, warn, digit); break;
-        case 4: plotNumeric(8, data, warn, digit); break;
-        case 5: plotNumeric(9, data, warn, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
+  // check engine off on voltage pid
+  if (pidConfig[pid][2] == "0142") engine_onoff(data, pidNo);
 
-    case 1:
-      switch (pidNo) {
-        case 0: plotArc(1, label, data, warn, mn, mx, digit); break;
-        case 1: plotArc(2, label, data, warn, mn, mx, digit); break;
-        case 2: plotArc(3, label, data, warn, mn, mx, digit); break;
-        case 3: plotArc(7, label, data, warn, mn, mx, digit); break;
-        case 4: plotArc(8, label, data, warn, mn, mx, digit); break;
-        case 5: plotArc(9, label, data, warn, mn, mx, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 2:
-      switch (pidNo) {
-        case 0: plotNumeric(1, data, warn, digit); break;
-        case 1: plotNumeric(2, data, warn, digit); break;
-        case 2: plotNumeric(3, data, warn, digit); break;
-        case 3: plotNumeric(7, data, warn, digit); break;
-        case 4: plotNumeric(8, data, warn, digit); break;
-        case 5: plotNumeric(9, data, warn, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 3:
-      switch (pidNo) {
-        case 0: plotNumeric(1, data, warn, digit); break;
-        case 1: plotNumeric(2, data, warn, digit); break;
-        case 2: plotNumeric(3, data, warn, digit); break;
-        case 3: plotVBar(3, data, warn, mn, mx, digit); break;
-        case 4: plotVBar(4, data, warn, mn, mx, digit); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 4:
-      switch (pidNo) {
-        case 0: plotVBar(1, data, warn, mn, mx, digit); break;
-        case 1: plotNumeric(4, data, warn, digit); break;
-        case 2: plotNumeric(5, data, warn, digit); break;
-        case 3: plotNumeric(6, data, warn, digit); break;
-        case 4: plotVBar(4, data, warn, mn, mx, digit); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 5:
-      switch (pidNo) {
-        case 0: plotVBar(1, data, warn, mn, mx, digit); break;
-        case 1: plotVBar(2, data, warn, mn, mx, digit); break;
-        case 2: plotNumeric(7, data, warn, digit); break;
-        case 3: plotNumeric(8, data, warn, digit); break;
-        case 4: plotNumeric(9, data, warn, digit); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 6:
-      switch (pidNo) {
-        case 0: plotVBar(1, data, warn, mn, mx, digit); break;
-        case 1: plotVBar(2, data, warn, mn, mx, digit); break;
-        case 2: plotVBar(3, data, warn, mn, mx, digit); break;
-        case 3: plotVBar(4, data, warn, mn, mx, digit); break;
-        case 4: engine_onoff(data, pidNo); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 7:
-      switch (pidNo) {
-        case 0: plotVBar(1, data, warn, mn, mx, digit); break;
-        case 1: plotVBar(2, data, warn, mn, mx, digit); break;
-        case 2: plotVBar(3, data, warn, mn, mx, digit); break;
-        case 3: plotVBar(4, data, warn, mn, mx, digit); break;
-        case 4: engine_onoff(data, pidNo); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 8:  // needle showcase
-      switch (pidNo) {
-        case 0: plotNeedle(1, label, data, warn, mn, mx, digit); break;
-        case 1: plotNeedle(2, label, data, warn, mn, mx, digit); break;
-        case 2: plotNeedle(3, label, data, warn, mn, mx, digit); break;
-        case 3: plotNumeric(7, data, warn, digit); break;
-        case 4: plotNumeric(8, data, warn, digit); break;
-        case 5: plotNumeric(9, data, warn, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 9:  // 7seg showcase
-      switch (pidNo) {
-        case 0: plotSeg7(1, data, warn, digit); break;
-        case 1: plotSeg7(2, data, warn, digit); break;
-        case 2: plotSeg7(3, data, warn, digit); break;
-        case 3: plotSeg7(7, data, warn, digit); break;
-        case 4: plotSeg7(8, data, warn, digit); break;
-        case 5: plotSeg7(9, data, warn, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 10:  // segbar showcase
-      switch (pidNo) {
-        case 0: plotSegBar(1, data, warn, mn, mx, digit); break;
-        case 1: plotSegBar(2, data, warn, mn, mx, digit); break;
-        case 2: plotSegBar(3, data, warn, mn, mx, digit); break;
-        case 3: plotSegBar(4, data, warn, mn, mx, digit); break;
-        case 4: engine_onoff(data, pidNo); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 11:  // C4 Corvette red LED
-      switch (pidNo) {
-        case 0: plotC4Bar(1, data, warn, mn, mx, digit); break;
-        case 1: plotC4Bar(2, data, warn, mn, mx, digit); break;
-        case 2: plotC4Bar(3, data, warn, mn, mx, digit); break;
-        case 3: plotC4Bar(4, data, warn, mn, mx, digit); break;
-        case 4: engine_onoff(data, pidNo); break;
-        case 5: engine_onoff(data, pidNo); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 12:  // DeLorean VFD
-      switch (pidNo) {
-        case 0: plotVFD(1, label, data, warn, mn, mx, digit); break;
-        case 1: plotVFD(2, label, data, warn, mn, mx, digit); break;
-        case 2: plotVFD(3, label, data, warn, mn, mx, digit); break;
-        case 3: plotVFD(7, label, data, warn, mn, mx, digit); break;
-        case 4: plotVFD(8, label, data, warn, mn, mx, digit); break;
-        case 5: plotVFD(9, label, data, warn, mn, mx, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-    case 13:  // Amber dot matrix
-      switch (pidNo) {
-        case 0: plotDot(1, label, data, warn, mn, mx, digit); break;
-        case 1: plotDot(2, label, data, warn, mn, mx, digit); break;
-        case 2: plotDot(3, label, data, warn, mn, mx, digit); break;
-        case 3: plotDot(7, label, data, warn, mn, mx, digit); break;
-        case 4: plotDot(8, label, data, warn, mn, mx, digit); break;
-        case 5: plotDot(9, label, data, warn, mn, mx, digit); break;
-        case 6: engine_onoff(data, pidNo); break;
-      }
-      break;
-
-  }  // switch layout
   bt_message = "";
-}  // updateMeter
+}
 
 // ============================================================
 // autoDim - smooth phone-style backlight control
