@@ -43,7 +43,10 @@ bool     graphActive      = false;
 uint8_t  graphPid         = 0;
 
 void initScreen();  // forward declaration
-void graphUpdate(uint8_t pid, float newData);  // ← add this line
+void graphUpdate(uint8_t pid, float newData); 
+void graphExit();
+void graphInit(uint8_t pid);
+String sendOBDCommand(String cmd);
 
 // ============================================================
 // SCREEN AND CELL GEOMETRY
@@ -88,17 +91,15 @@ float ecu_off_volt        = factoryECUOff;
 
 
 
-
-// graph defines
+// ── graph defines ─────────────────────────────────────────
 #define GRAPH_POINTS  318
-#define GRAPH_BG      0x0000
-#define GRAPH_LINE    0x07E0
-#define GRAPH_WARN    0xF800
-#define GRAPH_GRID    0x1082
-#define GRAPH_LABEL   0xFFFF
-
-
-
+#define GRAPH_BG      0x0000   // true black
+#define GRAPH_LINE    0xFFFF   // white line
+#define GRAPH_FILL    0x2104   // very dark grey fill under line
+#define GRAPH_WARN    0xFD20   // amber warning
+#define GRAPH_GRID    0x0841   // barely visible dark grey grid
+#define GRAPH_LABEL   0xFFFF   // white
+#define GRAPH_DIM     0x4A49   // grey for secondary text
 
 void graphInit(uint8_t pid) {
   graphPid    = pid;
@@ -107,44 +108,52 @@ void graphInit(uint8_t pid) {
   float seed  = old_data[pid];
   for (int i = 0; i < GRAPH_POINTS; i++) graphBuffer[i] = seed;
 
-  uint8_t pidIdx = layoutDefs[layout].cells[pid].pid;
-  String  label  = pidConfig[pidIdx][0];
-  String  unit   = pidConfig[pidIdx][1];
-  int     mn     = pidConfig[pidIdx][4].toInt();
-  int     mx     = pidConfig[pidIdx][5].toInt();
+  uint8_t pidIdx  = layoutDefs[layout].cells[pid].pid;
+  String  label   = pidConfig[pidIdx][0];
+  String  unit    = pidConfig[pidIdx][1];
+  int     mn      = pidConfig[pidIdx][4].toInt();
+  int     mx      = pidConfig[pidIdx][5].toInt();
   int     warnVal = warningValue[pidIdx].toInt();
 
   tft.fillScreen(GRAPH_BG);
 
-  // header bar
-  tft.fillRect(0, 0, 320, 18, 0x1082);
-  tft.setTextColor(GRAPH_LABEL, 0x1082);
-  tft.drawCentreString(label + "  [" + String(mn) + " - " + String(mx) + " " + unit + "]", 160, 2, 2);
+  // top label — large, left aligned
+  tft.setTextColor(GRAPH_LABEL, GRAPH_BG);
+  tft.drawString(label, 4, 3, 2);
 
-  // tap to exit hint
-  tft.setTextColor(0x4208, GRAPH_BG);
-  tft.drawRightString("tap to exit", 318, 228, 1);
+  // unit — small, right of label, dimmed
+  tft.setTextColor(GRAPH_DIM, GRAPH_BG);
+  tft.drawRightString(unit, 316, 5, 1);
 
-  // horizontal grid lines
+  // thin white separator line under header
+  tft.drawFastHLine(0, 18, 320, 0x2104);
+
+  // thin white separator line above footer
+  tft.drawFastHLine(0, 226, 320, 0x2104);
+
+  // footer — min left, exit centre, max right
+  tft.setTextColor(GRAPH_DIM, GRAPH_BG);
+  tft.drawString(String(mn), 4, 229, 1);
+  tft.drawCentreString("tap to exit", 160, 229, 1);
+  tft.drawRightString(String(mx), 316, 229, 1);
+
+  // horizontal grid lines — 3 subtle dotted lines
   for (int i = 1; i < 4; i++) {
-    int gy = 19 + (205 * i / 4);
-    tft.drawFastHLine(0, gy, 320, GRAPH_GRID);
+    int gy = 19 + (206 * i / 4);
+    for (int x = 0; x < 320; x += 4)
+      tft.drawPixel(x, gy, GRAPH_GRID);
+    // scale value
     int labelVal = mx - ((mx - mn) * i / 4);
-    tft.setTextColor(0x4208, GRAPH_BG);
-    tft.drawString(String(labelVal), 2, gy - 7, 1);
+    tft.setTextColor(GRAPH_GRID, GRAPH_BG);
+    tft.drawString(String(labelVal), 4, gy - 7, 1);
   }
 
-  // min/max labels
-  tft.setTextColor(0x4208, GRAPH_BG);
-  tft.drawString(String(mx), 2, 20,  1);
-  tft.drawString(String(mn), 2, 216, 1);
-
-  // warn line
-  int warnY = map(warnVal, mn, mx, 224, 19);
-  warnY     = constrain(warnY, 19, 224);
-  tft.drawFastHLine(0, warnY, 320, 0xFC00);
-  tft.setTextColor(0xFC00, GRAPH_BG);
-  tft.drawRightString("W", 318, warnY - 6, 1);
+  // warn line — solid amber, thin
+  int warnY = map(warnVal, mn, mx, 225, 20);
+  warnY     = constrain(warnY, 20, 225);
+  tft.drawFastHLine(0, warnY, 320, GRAPH_WARN);
+  tft.setTextColor(GRAPH_WARN, GRAPH_BG);
+  tft.drawRightString("!", 316, warnY - 8, 1);
 }
 
 void graphUpdate(uint8_t pid, float newData) {
@@ -156,62 +165,64 @@ void graphUpdate(uint8_t pid, float newData) {
   int     warnVal = warningValue[pidIdx].toInt();
   bool    digit   = pidConfig[pidIdx][7].toInt();
 
-  // store new sample
   graphBuffer[graphHead] = newData;
   graphHead = (graphHead + 1) % GRAPH_POINTS;
 
-  // redraw all points
   for (int x = 0; x < GRAPH_POINTS; x++) {
     int   idx = (graphHead + x) % GRAPH_POINTS;
     float val = graphBuffer[idx];
-    int   y   = map((int)val, mn, mx, 224, 19);
-    y         = constrain(y, 19, 224);
+    int   y   = map((int)val, mn, mx, 225, 20);
+    y         = constrain(y, 20, 225);
 
     // erase column
-    tft.drawFastVLine(x, 19, 206, GRAPH_BG);
+    tft.drawFastVLine(x, 20, 206, GRAPH_BG);
 
-    // redraw grid dots
+    // redraw dotted grid
     for (int i = 1; i < 4; i++) {
-      int gy = 19 + (205 * i / 4);
-      tft.drawPixel(x, gy, GRAPH_GRID);
+      int gy = 19 + (206 * i / 4);
+      if (x % 4 == 0) tft.drawPixel(x, gy, GRAPH_GRID);
     }
 
-    // draw point
-    uint16_t dotColor = (val >= warnVal) ? GRAPH_WARN : GRAPH_LINE;
-    tft.drawPixel(x, y, dotColor);
+    bool aboveWarn = (val >= warnVal);
+    uint16_t lineCol = aboveWarn ? GRAPH_WARN : GRAPH_LINE;
 
-    // connect to previous point
+    // solid fill under line — single pixel wide columns, fades via color
+    uint16_t fillCol = aboveWarn ? 0x2000 : GRAPH_FILL;
+    tft.drawFastVLine(x, y + 1, 225 - y, fillCol);
+
+    // connect to previous point — 2px thick
     if (x > 0) {
-      int   prevIdx  = (graphHead + x - 1) % GRAPH_POINTS;
-      float prevVal  = graphBuffer[prevIdx];
-      int   prevY    = map((int)prevVal, mn, mx, 224, 19);
-      prevY          = constrain(prevY, 19, 224);
-      uint16_t lineColor = (val >= warnVal || prevVal >= warnVal) ? GRAPH_WARN : GRAPH_LINE;
-      tft.drawLine(x - 1, prevY, x, y, lineColor);
+      int   prevIdx = (graphHead + x - 1) % GRAPH_POINTS;
+      float prevVal = graphBuffer[prevIdx];
+      int   prevY   = map((int)prevVal, mn, mx, 225, 20);
+      prevY         = constrain(prevY, 20, 225);
+      uint16_t lc   = ((val >= warnVal) || (prevVal >= warnVal)) ? GRAPH_WARN : GRAPH_LINE;
+      tft.drawLine(x - 1, prevY,     x, y,     lc);
+      tft.drawLine(x - 1, prevY - 1, x, y - 1, lc);
     }
+
+    // bright point
+    tft.drawPixel(x, y,     lineCol);
+    tft.drawPixel(x, y - 1, lineCol);
   }
 
   // redraw warn line on top
-  int warnY = map(warnVal, mn, mx, 224, 19);
-  warnY     = constrain(warnY, 19, 224);
-  tft.drawFastHLine(0, warnY, 320, 0xFC00);
+  int warnY = map(warnVal, mn, mx, 225, 20);
+  warnY     = constrain(warnY, 20, 225);
+  tft.drawFastHLine(0, warnY, 320, GRAPH_WARN);
 
-  // current value in header
-  tft.fillRect(220, 0, 100, 18, 0x1082);
+  // live value — top right, large
+  tft.fillRect(180, 0, 136, 17, GRAPH_BG);
   uint16_t valColor = (newData >= warnVal) ? GRAPH_WARN : GRAPH_LABEL;
-  tft.setTextColor(valColor, 0x1082);
-  String result = String(newData, digit);
-  tft.drawRightString(result.c_str(), 318, 2, 2);
+  tft.setTextColor(valColor, GRAPH_BG);
+  String result = String(newData, digit ? 1 : 0);
+  tft.drawRightString(result.c_str(), 316, 2, 2);
 }
 
 void graphExit() {
   graphActive = false;
   initScreen();
 }
-
-
-
-
 
 // ============================================================
 // SHARED HELPER - horizontal LED bar
@@ -1120,6 +1131,7 @@ void engine_onoff(float data, uint8_t pid) {
 // UNIFIED updateMeter
 // ============================================================
 void updateMeter(uint8_t pidNo, String response) {
+  if (graphActive) return;
   const LayoutDef &ld = layoutDefs[layout];
 
   // graph mode intercept
@@ -1160,21 +1172,33 @@ void updateMeter(uint8_t pidNo, String response) {
   int      warn    = warningValue[pid].toInt();
   uint8_t  cellNum = getCellNum(ld.grid, pidNo);
 
-  getAB(response);
   float data = 0.0;
- switch (formula) {
-  case 0:  data = A * 0.145; break;                                        // raw byte to psi (MAP/baro)
-  case 1:  data = (A - 40) * 9.0 / 5.0 + 32; break;                       // celsius offset to fahrenheit
-  case 2:  data = A * 100.0 / 255; break;                                  // byte to percentage
-  case 3:  data = (256 * A + B) / 4.0; break;                              // two-byte RPM
-  case 4:  data = (256 * A + B) / 1000.0; break;                           // two-byte voltage or scaled load
-  case 5:  data = (256*A+B)/16.0; if (data>150||data<0) data=old_data[pidIndex]; break;  // two-byte temp with bounds
-  case 6:  data = (A*256+B)*5/72-18; if (data>150||data<0) data=old_data[pidIndex]; break; // Ford-specific (unused)
-  case 7:  data = (A / 1.28) - 100; break;                                 // signed fuel trim percent
-  case 8:  data = (256 * A + B) / 100.0; break;                            // MAF grams/sec
-  case 9:  data = A / 200.0; break;                                        // O2 sensor voltage (0-1.275v)
-  case 10: data = (A / 2.0) - 64; break;                                   // ignition timing degrees BTDC
-}
+
+  // odometer (formula 13) uses 4-byte parse on the response already passed in
+  if (formula == 13) {
+    float raw_km = getABCD(response) / 10.0;
+    data = raw_km;  // case 13 in switch converts km → miles
+  } else {
+    getAB(response);
+  }
+
+  switch (formula) {
+    case 0:  data = A * 0.145; break;                                                          // raw byte to psi (MAP/baro)
+    case 1:  data = (A - 40) * 9.0 / 5.0 + 32; break;                                         // celsius offset to fahrenheit
+    case 2:  data = A * 100.0 / 255; break;                                                    // byte to percentage
+    case 3:  data = (256 * A + B) / 4.0; break;                                                // two-byte RPM
+    case 4:  data = (256 * A + B) / 1000.0; break;                                             // two-byte voltage or scaled load
+    case 5:  data = (256*A+B)/16.0; if (data>150||data<0) data=old_data[pidIndex]; break;      // two-byte temp with bounds
+    case 6:  data = (A*256+B)*5/72-18; if (data>150||data<0) data=old_data[pidIndex]; break;   // Ford-specific (unused)
+    case 7:  data = (A / 1.28) - 100; break;                                                   // signed fuel trim percent
+    case 8:  data = (256 * A + B) / 100.0; break;                                              // MAF grams/sec
+    case 9:  data = A / 200.0; break;                                                          // O2 sensor voltage (0-1.275v)
+    case 10: data = (A / 2.0) - 64; break;                                                     // ignition timing degrees BTDC
+    case 11: data = 3.0 * A * 0.14504; break;                                                  // fuel pressure kPa → psi
+    case 12: data = ((256.0 * A + B) / 20.0) * 0.264172; break;                               // fuel rate L/h → gal/h
+    case 13: data = data * 0.621371; break;                                                    // odometer km → miles (pre-set above)
+    case 14: data = 256.0 * A + B; break;                                                      // run time seconds
+  }
 
   switch (gt) {
     case GT_ARC:     plotArc(cellNum, label, data, warn, mn, mx, digit); break;

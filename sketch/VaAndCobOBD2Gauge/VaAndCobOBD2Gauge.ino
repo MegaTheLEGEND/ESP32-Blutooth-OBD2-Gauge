@@ -20,7 +20,7 @@ About opening logo image and goodbye image.
 //--- FLAG SETTING ----- for debugging
 //#define TERMINAL //temrinal mode (no gauge)
 #define SERIAL_DEBUG //to show data in serial port
-#define SKIP_CONNECTION //skip elm327 BT connection to view meter
+//#define SKIP_CONNECTION //skip elm327 BT connection to view meter
 //#define TEST_DTC //test DTC
 
 //#define FORD_T5   // FOR FORD T5 uncomment this line
@@ -83,34 +83,41 @@ skip = delay reading 0 - 3; 3 = max delay read
 digit = want to show digit or not
 warn = default warning value
 */
-const String pidConfig[20][9] = {
-//  Label         unit     pid    fmt  min     max   skip digit warn
-  { "ENG Load",   "%",    "0104", "2", "0",   "100",  "0", "0", "80"   }, // 0
-  { "Coolant",    "`F",   "0105", "1", "40",  "240",  "3", "0", "210"  }, // 1
-  { "MAP",        "psi",  "010B", "0", "0",   "40",   "0", "1", "35"   }, // 2
-  { "ENG SPD",    "rpm",  "010C", "3", "0",   "5500", "0", "0", "4500" }, // 3
-  { "PCM Volt",   "volt", "0142", "4", "0",   "16",   "1", "1", "15"   }, // 4
-  { "Intake Tmp", "`F",   "010F", "1", "0",   "150",  "3", "0", "120"  }, // 5
-  { "Trans Tmp",  "`F",   "0105", "1", "40",  "240",  "3", "0", "200"  }, // 6  placeholder
-  { "Throttle",   "%",    "0111", "2", "0",   "100",  "0", "0", "90"   }, // 7
-  { "VSS",        "mph",  "010D", "0", "0",   "120",  "0", "0", "110"  }, // 8  formula 0 = raw byte = km/h, ~same scale
-  { "Short Fuel", "%",    "0106", "7", "-25", "25",   "1", "1", "20"   }, // 9  short term fuel trim B1
-  { "Long Fuel",  "%",    "0107", "7", "-25", "25",   "1", "1", "20"   }, // 10 long term fuel trim B1
-  { "MAF",        "g/s",  "010C", "8", "0",   "300",  "0", "1", "250"  }, // 11 MAF air flow - formula 8
-  { "O2 B1S1",    "v",    "0114", "9", "0",   "1",    "2", "2", "0"    }, // 12 O2 sensor bank1 sensor1
-  { "O2 B1S2",    "v",    "0115", "9", "0",   "1",    "2", "2", "0"    }, // 13 O2 sensor bank1 sensor2
-  { "Timing",     "deg",  "010E", "10","0",   "60",   "1", "1", "55"   }, // 14 ignition timing
-  { "Baro",       "psi",  "0133", "0", "10",  "17",   "3", "1", "16"   }, // 15 barometric pressure
-  { "EGR Err",    "%",    "012D", "7", "-25", "25",   "3", "1", "20"   }, // 16 EGR error
-  { "Fuel Lvl",   "%",    "012F", "2", "0",   "100",  "3", "0", "10"   }, // 17 fuel level
-  { "Abs Load",   "%",    "0143", "4", "0",   "100",  "1", "0", "90"   }, // 18 absolute load - reuses formula 4 scaled
-  { "Rel Throt",  "%",    "0145", "2", "0",   "100",  "0", "0", "90"   }, // 19 relative throttle
+const String pidConfig[26][9] = {
+//  Label         unit     pid      fmt  min     max      skip digit warn
+  { "ENG Load",   "%",    "0104",  "2", "0",   "100",   "0", "0", "80"   }, // 0
+  { "Coolant",    "`F",   "0105",  "1", "40",  "240",   "3", "0", "210"  }, // 1
+  { "MAP",        "psi",  "010B",  "0", "0",   "40",    "0", "1", "35"   }, // 2
+  { "ENG SPD",    "rpm",  "010C",  "3", "0",   "5500",  "0", "0", "4500" }, // 3
+  { "PCM Volt",   "volt", "0142",  "4", "0",   "16",    "1", "1", "15"   }, // 4
+  { "Intake Tmp", "`F",   "010F",  "1", "0",   "150",   "3", "0", "120"  }, // 5
+  { "Trans Tmp",  "`F",   "0105",  "1", "40",  "240",   "3", "0", "200"  }, // 6  placeholder
+  { "Throttle",   "%",    "0111",  "2", "0",   "100",   "0", "0", "90"   }, // 7
+  { "VSS",        "mph",  "010D",  "0", "0",   "120",   "0", "0", "110"  }, // 8
+  { "Short Fuel", "%",    "0106",  "7", "-25", "25",    "1", "1", "20"   }, // 9
+  { "Long Fuel",  "%",    "0107",  "7", "-25", "25",    "1", "1", "20"   }, // 10
+  { "MAF",        "g/s",  "010C",  "8", "0",   "300",   "0", "1", "250"  }, // 11
+  { "O2 B1S1",    "v",    "0114",  "9", "0",   "1",     "2", "2", "0"    }, // 12
+  { "O2 B1S2",    "v",    "0115",  "9", "0",   "1",     "2", "2", "0"    }, // 13
+  { "Timing",     "deg",  "010E",  "10","0",   "60",    "1", "1", "55"   }, // 14
+  { "Baro",       "psi",  "0133",  "0", "10",  "17",    "3", "1", "16"   }, // 15
+  { "EGR Err",    "%",    "012D",  "7", "-25", "25",    "3", "1", "20"   }, // 16
+  { "Fuel Lvl",   "%",    "012F",  "2", "0",   "100",   "3", "0", "10"   }, // 17
+  { "Abs Load",   "%",    "0143",  "4", "0",   "100",   "1", "0", "90"   }, // 18
+  { "Rel Throt",  "%",    "0145",  "2", "0",   "100",   "0", "0", "90"   }, // 19
+  { "Cmd EGR",    "%",    "012C",  "2", "0",   "100",   "0", "0", "90"   }, // 20
+  { "Fuel Pres",  "psi",  "010A",  "11","0",   "111",   "0", "1", "100"  }, // 21
+  { "Fuel Rate",  "g/h",  "015E",  "12","0",   "30",    "0", "0", "25"   }, // 22
+  { "Odo",        "mi",   "01A6",  "13","0",   "999999","0", "0", "0"    }, // 23
+  { "Amb Tmp",    "`F",   "0146",  "1", "-40", "150",   "3", "0", "120"  }, // 24
+  { "Run Time",   "s",    "011F",  "14","0",   "65535", "0", "0", "0"    }, // 25
 };
 
-String warningValue[20] = {
+String warningValue[26] = {
   "80", "210", "35", "4500", "15", "120", "200",
-  "90", "110", "20", "20", "250", "0", "0",
-  "55", "16",  "20", "10",  "90", "90"
+  "90", "110", "20", "20",   "250", "0",  "0",
+  "55", "16",  "20", "10",   "90", "90",
+  "90", "100", "25", "0",    "120", "0"
 };
 /*  User configuration here to change display 
       layout 0      layout 1       layout 2     layout 3      layout 4     layout 5

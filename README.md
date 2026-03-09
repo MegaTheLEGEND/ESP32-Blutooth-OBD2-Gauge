@@ -17,34 +17,44 @@ Original project by Va&Cob — adapted for 2007 Ram 1500 with significant new ga
 
 ### 🚗 Ram 1500 4.7L V8 PID Configuration
 Reconfigured all PIDs for Chrysler/Dodge OBD2 protocol (ISO 15765-4 CAN).
-Expanded from 7 to **20 PIDs**:
+Expanded from 7 to **26 PIDs**:
 
-| # | Gauge      | PID    | Formula              | Range      | Warn   |
-|---|------------|--------|----------------------|------------|--------|
-| 0 | ENG Load   | 0104   | A×100/255 (%)        | 0–100%     | 80%    |
-| 1 | Coolant    | 0105   | (A-40)×9/5+32 °F     | 40–240°F   | 210°F  |
-| 2 | MAP        | 010B   | A×0.145 psi          | 0–40 psi   | 35 psi |
-| 3 | ENG SPD    | 010C   | (256A+B)/4 rpm       | 0–5500 rpm | 4500   |
-| 4 | PCM Volt   | 0142   | (256A+B)/1000 V      | 0–16V      | 15V    |
-| 5 | Intake Tmp | 010F   | (A-40)×9/5+32 °F     | 0–150°F    | 120°F  |
-| 6 | Trans Tmp  | 0105*  | (A-40)×9/5+32 °F     | 40–240°F   | 200°F  |
-| 7 | Throttle   | 0111   | A×100/255 (%)        | 0–100%     | 90%    |
-| 8 | VSS        | 010D   | A (km/h raw)         | 0–120      | 110    |
-| 9 | Short Fuel | 0106   | (A/1.28)-100 %       | -25–25%    | 20%    |
-|10 | Long Fuel  | 0107   | (A/1.28)-100 %       | -25–25%    | 20%    |
-|11 | MAF        | 010C   | (256A+B)/100 g/s     | 0–300      | 250    |
-|12 | O2 B1S1    | 0114   | A/200 V              | 0–1.275V   | —      |
-|13 | O2 B1S2    | 0115   | A/200 V              | 0–1.275V   | —      |
-|14 | Timing     | 010E   | (A/2)-64 deg         | 0–60°      | 55°    |
-|15 | Baro       | 0133   | A×0.145 psi          | 10–17 psi  | 16 psi |
-|16 | EGR Err    | 012D   | (A/1.28)-100 %       | -25–25%    | 20%    |
-|17 | Fuel Lvl   | 012F   | A×100/255 (%)        | 0–100%     | 10%    |
-|18 | Abs Load   | 0143   | (256A+B)/1000        | 0–100%     | 90%    |
-|19 | Rel Throt  | 0145   | A×100/255 (%)        | 0–100%     | 90%    |
+| # | Gauge        | PID    | Formula              | Range        | Warn   |
+|---|--------------|--------|----------------------|--------------|--------|
+| 0 | ENG Load     | 0104   | A×100/255 (%)        | 0–100%       | 80%    |
+| 1 | Coolant      | 0105   | (A-40)×9/5+32 °F     | 40–240°F     | 210°F  |
+| 2 | MAP          | 010B   | A×0.145 psi          | 0–40 psi     | 35 psi |
+| 3 | ENG SPD      | 010C   | (256A+B)/4 rpm       | 0–5500 rpm   | 4500   |
+| 4 | PCM Volt     | 0142   | (256A+B)/1000 V      | 0–16V        | 15V    |
+| 5 | Intake Tmp   | 010F   | (A-40)×9/5+32 °F     | 0–150°F      | 120°F  |
+| 6 | Trans Tmp    | 0105*  | (A-40)×9/5+32 °F     | 40–240°F     | 200°F  |
+| 7 | Throttle     | 0111   | A×100/255 (%)        | 0–100%       | 90%    |
+| 8 | VSS          | 010D   | A (raw = km/h)       | 0–120        | 110    |
+| 9 | Short Fuel   | 0106   | (A/1.28)-100 %       | -25–25%      | 20%    |
+|10 | Long Fuel    | 0107   | (A/1.28)-100 %       | -25–25%      | 20%    |
+|11 | MAF          | 010C   | (256A+B)/100 g/s     | 0–300        | 250    |
+|12 | O2 B1S1      | 0114   | A/200 V              | 0–1.275V     | —      |
+|13 | O2 B1S2      | 0115   | A/200 V              | 0–1.275V     | —      |
+|14 | Timing       | 010E   | (A/2)-64 deg         | 0–60°        | 55°    |
+|15 | Baro         | 0133   | A×0.145 psi          | 10–17 psi    | 16 psi |
+|16 | EGR Err      | 012D   | (A/1.28)-100 %       | -25–25%      | 20%    |
+|17 | Fuel Lvl     | 012F   | A×100/255 (%)        | 0–100%       | 10%    |
+|18 | Abs Load     | 0143   | (256A+B)/1000        | 0–100%       | 90%    |
+|19 | Rel Throt    | 0145   | A×100/255 (%)        | 0–100%       | 90%    |
+|20 | Cmd EGR      | 012C   | A×100/255 (%)        | 0–100%       | 90%    |
+|21 | Fuel Pres    | 010A   | 3A×0.145 psi         | 0–111 psi    | 100    |
+|22 | Fuel Rate    | 015E   | (256A+B)/20×0.264 gal/h | 0–30 g/h  | 25     |
+|23 | Odo          | 01A6   | 4-byte /10 km → mi   | 0–999999 mi  | —      |
+|24 | Amb Tmp      | 0146   | (A-40)×9/5+32 °F     | -40–150°F    | 120°F  |
+|25 | Run Time     | 011F   | 256A+B seconds       | 0–65535 s    | —      |
 
-> *Trans temp uses coolant PID as placeholder. Real Chrysler 545RFE trans temp requires Mode 22 PID `221F03` — probe with `2200` via AlfaOBD or ELM327 terminal to confirm.
+> *Trans temp uses coolant PID as placeholder. Real Chrysler 545RFE trans temp requires Mode 22 PID `221F03`.
 
-> MAF (pid 11) will return NO DATA on the 4.7L — it is speed-density, not mass-airflow.
+> MAF (pid 11) returns NO DATA on the 4.7L — speed-density engine, no MAF sensor.
+
+> VSS (pid 8) returns km/h raw from the ECU — scale label reads mph but values are metric. Close enough for relative monitoring.
+
+> Odometer (pid 23) uses a 4-byte parser (`getABCD()`). May return NO DATA on some Chrysler PCMs — safe to leave in layouts.
 
 Formula reference:
 ```
@@ -59,6 +69,10 @@ Formula reference:
 8  = MAF grams/sec
 9  = O2 sensor voltage (0–1.275V)
 10 = ignition timing degrees BTDC
+11 = fuel pressure kPa → psi (3A × 0.145)
+12 = fuel rate L/h → gal/h
+13 = odometer 4-byte km → miles (uses getABCD())
+14 = run time two-byte seconds
 ```
 
 ### 🖥️ Display Fix
@@ -84,20 +98,40 @@ All layout configuration lives in a single `layoutDefs[]` array in `layouts.h`.
 **Adding a new layout = one new entry. Nothing else changes.**
 
 ```cpp
-{ "All Needle", GRID_6CELL, 6, {
-  {0, GT_NEEDLE}, {2, GT_NEEDLE}, {3, GT_NEEDLE},
-  {1, GT_NEEDLE}, {5, GT_NEEDLE}, {6, GT_NEEDLE}
+{ "My Layout", GRID_6CELL, 6, {
+  {0, GT_ARC}, {2, GT_ARC}, {3, GT_ARC},
+  {1, GT_NUMERIC}, {5, GT_NUMERIC}, {4, GT_NUMERIC}
 }, 4 },
 ```
 
-`max_layout` is computed automatically via `sizeof`. `initScreen()`, `updateMeter()`, and `handleTouch()` all read from `layoutDefs` — no switch/case per layout anywhere.
+`max_layout` is computed automatically via `sizeof`. Each cell must use a unique PID within the layout — no duplicate sensors on the same page.
 
 Three grid types:
 - `GRID_6CELL` — two 160px columns × three 80px rows (6 cells)
 - `GRID_4COL` — four 80px full-height columns (4 cells)
 - `GRID_MIXED` — left 160px numeric column + right two 80px bar columns (5 cells)
 
-**37 layouts included (0–36)** covering all gauge types and PID combinations.
+**50 layouts included (0–49)**:
+
+| Range | Theme |
+|-------|-------|
+| 0–7   | Core styles — arc, numeric, vbar, needle, 7-seg, segbar |
+| 8–13  | 80s dash styles — C4 LED, DeLorean VFD, dot matrix |
+| 14–15 | Fuel & air sensors |
+| 16–20 | Engine vitals in multiple styles |
+| 21–22 | Temperature overview |
+| 23–25 | Fuel system, throttle & load |
+| 26–27 | O2/trim and timing |
+| 28–29 | Highway cruise |
+| 30–31 | C4 and segbar expanded |
+| 32–34 | Mixed grid layouts |
+| 35–36 | VFD and dot expanded |
+| 37–38 | EGR commanded vs error monitoring |
+| 39–41 | Fuel pressure, rate, and level combinations |
+| 42    | Trip info — odometer, runtime, speed, voltage |
+| 43–45 | All temps including ambient in three styles |
+| 46–47 | Fuel pressure vbar and C4 |
+| 48–49 | Cruise+runtime and full dashboard |
 
 ### 📈 Full-Screen Scrolling Graph
 Tap any sensor cell to open a full-screen scrolling line graph:
@@ -112,7 +146,7 @@ Tap any sensor cell to open a full-screen scrolling line graph:
 **Page switching — swipe:**
 - Swipe right → next layout
 - Swipe left → previous layout
-- Must be >50px horizontal and more horizontal than vertical (prevents false triggers on tap)
+- Must be >50px horizontal and more horizontal than vertical (prevents accidental swipe on tap)
 - Layout saved to NVS flash on every page change
 
 **Graph — tap:**
@@ -168,7 +202,7 @@ If no OBD2 response for 15 seconds:
 | `meter.h` | All gauge drawing, graph, initScreen, updateMeter |
 | `touchscreen.h` | Touch calibration, getTouch, handleTouch |
 | `config.h` | Config menu, warning settings, about page |
-| `bluetooth.h` | BT scan and connect |
+| `bluetooth.h` | BT scan, connect, getAB(), getABCD() |
 | `image.h` | Bitmap image data |
 | `elm327.h` | VIN read helper |
 | `firmware_update.h` | OTA / SD firmware update |
@@ -202,8 +236,8 @@ If no OBD2 response for 15 seconds:
 - Gauge magnetic stand
 
 ## Features
-- 20 OBD2 PIDs configured (Ram 4.7L)
-- **37 selectable layout pages**
+- 26 OBD2 PIDs configured (Ram 4.7L)
+- **50 selectable layout pages**
 - **9 gauge styles:** arc, numeric, vertical bar, 7-segment, segmented bar, needle, C4 LED, VFD, dot matrix
 - **Full-screen scrolling line graph** — tap any cell
 - **Swipe to change pages**, tap to open graph
@@ -223,7 +257,7 @@ If no OBD2 response for 15 seconds:
 ## Setting Default Boot Layout
 ```cpp
 // In VaAndCobOBD2Gauge.ino:
-layout = pref.getUShort("layout", 0);  // change 0 to desired layout 0-36
+layout = pref.getUShort("layout", 0);  // change 0 to desired layout 0-49
 ```
 Only applies on first boot or after flash erase — once a layout is saved it boots to that layout.
 
@@ -233,6 +267,8 @@ Only applies on first boot or after flash erase — once a layout is saved it bo
 - **Trans temp PID:** Ram 545RFE real trans temp requires Mode 22 PID `221F03` — currently using coolant PID as placeholder. Verify with AlfaOBD before enabling.
 - **Oil temp (015C):** No factory sensor on 4.7L, returns NO DATA
 - **MAF (pid 11):** 4.7L is speed-density — MAF will return NO DATA
-- **VSS (pid 8):** Returns km/h raw — reads metric but useful for relative comparison
+- **VSS (pid 8):** Returns km/h raw — label says mph but values are metric
+- **Odometer (pid 23):** 4-byte parse via `getABCD()` — may return NO DATA on some Chrysler PCMs
+- **Fuel rate (pid 22):** Returns NO DATA on some trucks — safe to leave in layouts
 - **LDR calibration:** `BRIGHT_LIGHT=200` and `DARK_LIGHT=2000` need tuning to your LDR — check serial monitor with `#define SERIAL_DEBUG`
 - **Display driver:** `invertDisplay(true)` is a workaround — root cause may be wrong driver chip in `User_Setup.h`

@@ -145,3 +145,36 @@ void connectLastOBDII() {
   }
  
 }//connectLasbtOBDII
+
+
+//---------------------------
+// 4-byte OBD2 response parser for PIDs that return A B C D bytes
+// e.g. odometer "41 A6 00 00 27 10" -> returns raw uint32 as float
+// caller divides by 10.0 for km, then multiply by 0.621371 for miles
+float getABCD(String response) {
+  response.trim();
+
+  // skip the two echo bytes (mode "41" and pid byte) to reach data
+  int pos = 0;
+  uint8_t spacesSkipped = 0;
+  while (pos < (int)response.length() && spacesSkipped < 2) {
+    if (response.charAt(pos) == ' ') spacesSkipped++;
+    pos++;
+  }
+  if (pos >= (int)response.length()) return 0.0;
+
+  // parse up to 4 space-separated hex bytes
+  uint32_t bytes[4] = {0, 0, 0, 0};
+  for (uint8_t i = 0; i < 4; i++) {
+    int sp = response.indexOf(' ', pos);
+    String byteStr = (sp < 0) ? response.substring(pos)
+                               : response.substring(pos, sp);
+    byteStr.trim();
+    if (byteStr.length() == 0) break;
+    bytes[i] = (uint32_t)strtol(byteStr.c_str(), nullptr, 16);
+    if (sp < 0) break;
+    pos = sp + 1;
+  }
+
+  return (float)((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
+}

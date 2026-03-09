@@ -255,6 +255,81 @@ const LayoutDef layoutDefs[] = {
     {3,  GT_DOT}, {0,  GT_DOT}, {7,  GT_DOT},
     {8,  GT_DOT}, {2,  GT_DOT}, {14, GT_DOT}
   }, 4 },
+  
+  // 37 - EGR monitoring
+  { "EGR Monitor", GRID_6CELL, 6, {
+    {16, GT_ARC},     {20, GT_ARC},     {2,  GT_ARC},
+    {0,  GT_NUMERIC}, {7,  GT_NUMERIC}, {4,  GT_NUMERIC}
+  }, 4 },
+
+  // 38 - EGR segbar
+  { "EGR SegBar", GRID_4COL, 4, {
+    {16, GT_SEGBAR}, {20, GT_SEGBAR}, {2, GT_SEGBAR}, {0, GT_SEGBAR}
+  }, 4 },
+
+  // 39 - fuel pressure & rate
+  { "Fuel Press+Rate", GRID_6CELL, 6, {
+    {21, GT_ARC},     {22, GT_ARC},     {17, GT_ARC},
+    {9,  GT_NUMERIC}, {10, GT_NUMERIC}, {4,  GT_NUMERIC}
+  }, 4 },
+
+  // 40 - fuel pressure needle
+  { "Fuel Needle", GRID_6CELL, 6, {
+    {21, GT_NEEDLE}, {22, GT_NEEDLE}, {17, GT_NEEDLE},
+    {9,  GT_NUMERIC}, {10, GT_NUMERIC}, {4, GT_NUMERIC}
+  }, 4 },
+
+  // 41 - fuel system full
+  { "Fuel Full", GRID_6CELL, 6, {
+    {21, GT_ARC},     {17, GT_ARC},     {22, GT_ARC},
+    {9,  GT_NUMERIC}, {10, GT_NUMERIC}, {7,  GT_NUMERIC}
+  }, 4 },
+
+  // 42 - trip info
+  { "Trip Info", GRID_6CELL, 6, {
+    {23, GT_NUMERIC}, {25, GT_NUMERIC}, {8,  GT_NUMERIC},
+    {4,  GT_NUMERIC}, {24, GT_NUMERIC}, {17, GT_NUMERIC}
+  }, 4 },
+
+  // 43 - ambient & temps arc
+  { "All Temps+Amb", GRID_6CELL, 6, {
+    {1,  GT_ARC}, {5,  GT_ARC}, {24, GT_ARC},
+    {6,  GT_ARC}, {15, GT_ARC}, {4,  GT_NUMERIC}
+  }, 4 },
+
+  // 44 - temps VFD
+  { "Temps VFD", GRID_6CELL, 6, {
+    {1,  GT_VFD}, {5,  GT_VFD}, {24, GT_VFD},
+    {6,  GT_VFD}, {15, GT_VFD}, {4,  GT_VFD}
+  }, 4 },
+
+  // 45 - temps dot matrix
+  { "Temps Dot", GRID_6CELL, 6, {
+    {1,  GT_DOT}, {5,  GT_DOT}, {24, GT_DOT},
+    {6,  GT_DOT}, {15, GT_DOT}, {4,  GT_DOT}
+  }, 4 },
+
+  // 46 - fuel pressure vbar
+  { "Fuel Pres VBar", GRID_4COL, 4, {
+    {21, GT_VBAR}, {17, GT_VBAR}, {22, GT_VBAR}, {9, GT_VBAR}
+  }, 4 },
+
+  // 47 - fuel pressure C4
+  { "Fuel Pres C4", GRID_4COL, 4, {
+    {21, GT_C4BAR}, {17, GT_C4BAR}, {22, GT_C4BAR}, {9, GT_C4BAR}
+  }, 4 },
+
+  // 48 - runtime & cruise
+  { "Cruise+Runtime", GRID_6CELL, 6, {
+    {8,  GT_ARC},     {3,  GT_ARC},     {21, GT_ARC},
+    {25, GT_NUMERIC}, {23, GT_NUMERIC}, {4,  GT_NUMERIC}
+  }, 4 },
+
+  // 49 - dashboard
+  { "Dashboard", GRID_6CELL, 6, {
+    {3,  GT_ARC},     {21, GT_ARC},     {1,  GT_ARC},
+    {24, GT_NUMERIC}, {22, GT_NUMERIC}, {25, GT_NUMERIC}
+  }, 4 },
 
 };
 
