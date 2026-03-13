@@ -21,6 +21,7 @@ About opening logo image and goodbye image.
 //#define TERMINAL //temrinal mode (no gauge)
 #define SERIAL_DEBUG //to show data in serial port
 //#define SKIP_CONNECTION //skip elm327 BT connection to view meter
+//#define LoadTestData //load test data without connect to ELM327, for testing meter display and layout
 //#define TEST_DTC //test DTC
 
 //#define FORD_T5   // FOR FORD T5 uncomment this line
@@ -269,6 +270,48 @@ void checkGenuine() {                          //check if genuine obd2 gauge - m
 }
 //----------------------------------------------
 
+
+
+
+#ifdef LoadTestData
+float getTestData(uint8_t pidIdx) {
+  float t = millis() / 1000.0;
+  switch (pidIdx) {
+    case 0:  return 35.0  + sin(t * 0.3)  * 12.0 + random(-2, 2);           // ENG Load 23-47%
+    case 1:  return 195.0 + sin(t * 0.05) * 8.0  + random(-1, 1);           // Coolant 187-203°F
+    case 2:  return 14.0  + sin(t * 0.4)  * 4.0  + random(-1, 1);           // MAP 10-18 psi
+    case 3:  return 850.0 + sin(t * 0.2)  * 400.0 + random(-20, 20);        // RPM 450-1250
+    case 4:  return 13.8  + sin(t * 0.1)  * 0.4  + random(-1, 1) * 0.1;    // Voltage 13.4-14.2v
+    case 5:  return 85.0  + sin(t * 0.15) * 15.0 + random(-2, 2);           // Intake 70-100°F
+    case 6:  return 178.0 + sin(t * 0.07) * 10.0 + random(-1, 1);           // Trans 168-188°F
+    case 7:  return 18.0  + sin(t * 0.5)  * 10.0 + random(-2, 2);           // Throttle 8-28%
+    case 8:  return 45.0  + sin(t * 0.25) * 20.0 + random(-1, 1);           // VSS 25-65
+    case 9:  return sin(t * 0.6)  * 4.0           + random(-1, 1) * 0.5;    // Short Fuel trim
+    case 10: return sin(t * 0.2)  * 3.0           + random(-1, 1) * 0.3;    // Long Fuel trim
+    case 11: return 0.0;                                                      // MAF - no sensor
+    case 12: return 0.45 + sin(t * 1.2)        * 0.35 + random(-1,1)*0.02;  // O2 B1S1
+    case 13: return 0.45 + sin(t * 1.2 + 1.0)  * 0.35 + random(-1,1)*0.02; // O2 B1S2
+    case 14: return 12.0 + sin(t * 0.4)  * 8.0  + random(-1, 1);            // Timing 4-20 deg
+    case 15: return 14.5 + sin(t * 0.02) * 0.3  + random(-1, 1) * 0.1;     // Baro
+    case 16: return sin(t * 0.3)  * 5.0          + random(-1, 1);            // EGR Err
+    case 17: return 62.0 + sin(t * 0.01) * 3.0;                              // Fuel Level
+    case 18: return 40.0 + sin(t * 0.3)  * 15.0 + random(-2, 2);            // Abs Load
+    case 19: return 18.0 + sin(t * 0.5)  * 10.0 + random(-2, 2);            // Rel Throt
+    case 20: return 15.0 + sin(t * 0.3)  * 8.0  + random(-1, 1);            // Cmd EGR
+    case 21: return 48.0 + sin(t * 0.4)  * 6.0  + random(-1, 1);            // Fuel Pres
+    case 22: return 2.1  + sin(t * 0.3)  * 0.8  + random(-1, 1) * 0.1;     // Fuel Rate
+    case 23: return 87432.0;                                                  // Odometer static
+    case 24: return 68.0 + sin(t * 0.08) * 5.0  + random(-1, 1);            // Amb Tmp
+    case 25: return t;                                                        // Run Time counts up
+    default: return 0.0;
+  }
+}
+#endif
+
+
+
+
+
 //---- Include Header File --------------------
 #include "bluetooth.h"
 #include "layouts.h"
@@ -453,6 +496,7 @@ void loop() {
     delay(200);                               //delay avoid bounce
   } else {                                    //button release
     if (press) {                              //change layout next page
+      if (graphActive) { graphExit(); return; }// exit graph if in graph page
       layout++;                               //change to next layout page
       if (layout == max_layout) layout = 0;
       pref.putUShort("layout", layout);
@@ -550,38 +594,58 @@ void loop() {
     }  //else if incomingChar
   }    //if Serial.available
 
+
   //Send another PID to elm327
-  if (prompt) {      //> ELM327 ready! -> request next PID
-    prompt = false;  //no prompt from ELM327
-    checkCPUTemp();  //check temperature.
-    if (!skip) {
-      updateMeter(pidIndex, bt_message);  //update meter screen
-      pidRead++;                          //for calculate pid/s
+#ifdef LoadTestData
+  static unsigned long lastTestUpdate = 0;
+  if (millis() - lastTestUpdate > 100) {
+    lastTestUpdate = millis();
+    const LayoutDef &ld = layoutDefs[layout];
+    if (graphActive) {
+      uint8_t pidIdx = ld.cells[graphPid].pid;
+      float   val    = getTestData(pidIdx);
+      graphUpdate(graphPid, val);
+    } else {
+      for (uint8_t slot = 0; slot < ld.cellCount; slot++) {
+        uint8_t pidIdx = ld.cells[slot].pid;
+        float   val    = getTestData(pidIdx);
+        updateMeter(slot, val);
+      }
     }
-    pidIndex++;  //point to next pid
+  }
+#else
+  // normal OBD prompt block — unchanged
+  if (prompt) {
+    prompt = false;
+    checkCPUTemp();
+    if (!skip) {
+      updateMeter(pidIndex, bt_message);
+      pidRead++;
+    }
+    pidIndex++;
     if (pidIndex >= maxpidIndex) {
-      pidIndex = 0;  //back to pid 0
-      autoDim();     //auto backlight handle
+      pidIndex = 0;
+      autoDim();
       if (showsystem) {
         String status = String(pidRead * 1000.0 / (millis() - runtime), 0) + " p/s " + String(tempRead, 1) + "`F ";
         tft.setTextColor(TFT_YELLOW, TFT_BLACK);
         tft.drawCentreString(status.c_str(), 159, 0, 2);
         runtime = millis();
-      }             //if showsystem
-      pidRead = 0;  //reset pid read counter
+      }
+      pidRead = 0;
     }
-    if (pidCurrentSkip[pidIndex] <= 0) {                 //end of skip loop , go next index
-      pidCurrentSkip[pidIndex] = pidReadSkip[pidIndex];  //read max delay loop to current
+    if (pidCurrentSkip[pidIndex] <= 0) {
+      pidCurrentSkip[pidIndex] = pidReadSkip[pidIndex];
       skip = false;
-      BTSerial.print(pidList[pidIndex] + "\r");                 //send PID request
-    } else {                                                    //skip sending request
-      pidCurrentSkip[pidIndex] = pidCurrentSkip[pidIndex] - 1;  //decrese loop count
+      BTSerial.print(pidList[pidIndex] + "\r");
+    } else {
+      pidCurrentSkip[pidIndex] = pidCurrentSkip[pidIndex] - 1;
       prompt = true;
       lastResponseTime = millis();
       skip = true;
-    }  //else
-
-  }  //if prompt
+    }
+  }
+#endif
 
   /*------------------*/
 }  // loop
